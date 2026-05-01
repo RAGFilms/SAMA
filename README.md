@@ -37,7 +37,9 @@ SAMA is a single-file, zero-install browser-based media player. Drop the HTML fi
 Plays MP3, WAV, and MIDI files directly from your drive. Drag and drop individual files, select a full folder, or mix both. MIDI playback uses a built-in soundfont synthesizer with real-time piano roll display. Artist and title are parsed automatically from filenames formatted as `Artist - Title.mp3`.
 
 **Internet Radio**
-Powered by the [Radio Browser API](https://www.radio-browser.info/) — completely free, no API key required, access to tens of thousands of stations worldwide. Search by name, filter by 17 genre categories, save up to eight favorites as persistent presets.
+Powered by the [Radio Browser API](https://www.radio-browser.info/) — completely free, no API key required, access to tens of thousands of stations worldwide. Search by name, filter by 20 genre categories, save up to eight favorites as persistent presets.
+
+**Available genres:** All, Jazz, Electronic, Trance, House, Ambient, Classical, Synthwave, Rock, Metal, Blues, Hip Hop, Pop, K-Pop, Anime, Persian, Lo-Fi, Country, News, Talk
 
 **Playlist Management**
 Build playlists from local files, save them by name, reload them across sessions, remove individual tracks, and clear the queue. Shuffle and loop modes included.
@@ -386,3 +388,7 @@ SAMA is a passion project maintained by AGW Entertainment. Feature requests and 
 © AGW Entertainment. All rights reserved. See [LICENSE](LICENSE) for full terms.
 
 Personal use and unmodified sharing with attribution is permitted. Commercial use and derivative works require written permission from AGW Entertainment.
+
+---
+
+*Dedicated to Sama' Abdulhadi — keep playing.*
