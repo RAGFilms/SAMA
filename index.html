@@ -564,7 +564,7 @@ const PALEST_PALETTE=[[10,10,10],[239,0,0],[240,240,240],[0,151,54],[239,0,0],[1
 function resolveColor(fft,idx,total){
   switch(colorMode){
     case 'theme':{const c=getComputedStyle(document.documentElement).getPropertyValue('--waveform').trim();return hexToRgb(c);}
-    case 'drift':{const overall=fft?fftAvg(fft,0,200)/255:0.1;colorHue=(colorHue+0.06+overall*0.18)%360;const[r,g,b]=hslToRgb(colorHue,1,0.58);return{r,g,b};}
+    case 'drift':{const overall=fft?fftAvg(fft,0,200)/255:0.1;colorHue=(colorHue+0.008+overall*0.012)%360;const[r,g,b]=hslToRgb(colorHue,1,0.58);return{r,g,b};}
     case 'bloom':{const bass=fft?fftAvg(fft,0,8)/255:0;if(bass>0.65&&prevBass<0.5){beatHue=(beatHue+60+Math.random()*120)%360;}prevBass=bass;// Slowly interpolate toward target — no instant jump
       const diff=((beatHue-colorHue+540)%360)-180;colorHue=(colorHue+diff*0.015+360)%360;const[r,g,b]=hslToRgb(colorHue,1,0.6);return{r,g,b};}
     case 'prism':{const h=(idx/total)*360;const[r,g,b]=hslToRgb(h,1,0.6);return{r,g,b};}
