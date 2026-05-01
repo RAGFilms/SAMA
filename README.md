@@ -64,7 +64,7 @@ Full desktop experience on wide screens. Optimized touch layout on phones and ta
 
 ### Installation — Desktop
 
-1. Download `sama-player.html` from this repository
+1. Download `index.html` from this repository
 2. Save it anywhere on your computer
 3. Open it in Brave, Chrome, or Edge by dragging it into the browser or using `File > Open`
 
@@ -72,7 +72,7 @@ That is the entire installation.
 
 ### Installation — Mobile
 
-1. Download `sama-player.html` to your phone or tablet
+1. Download `index.html` to your phone or tablet
 2. Open your browser (Chrome on Android, Safari or Chrome on iOS)
 3. Use `File > Open` or locate the file in your Downloads folder and open it with the browser
 4. For the best experience on Android, add it to your home screen: tap the browser menu and select `Add to Home Screen`
@@ -271,9 +271,9 @@ When SAMA shows `CORS` instead of playing a station, it means the station's stre
 - Hosting SAMA on a simple local web server eliminates most CORS issues:
 
 ```bash
-# In the folder containing sama-player.html
+# In the folder containing index.html
 python3 -m http.server 8080
-# Then open http://localhost:8080/sama-player.html in your browser
+# Then open http://localhost:8080/index.html in your browser
 ```
 
 ---
@@ -390,3 +390,4 @@ Personal use and unmodified sharing with attribution is permitted. Commercial us
 ---
 
 *Dedicated to Sama' Abdulhadi — keep playing.*
+
