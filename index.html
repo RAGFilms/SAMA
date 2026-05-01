@@ -377,8 +377,8 @@ input[type=range].vol::-webkit-slider-thumb{-webkit-appearance:none;width:12px;h
     <button class="viz-preset" onclick="setVizMode('random')" id="vp-random"><span class="vp-icon">⚄</span><span class="vp-label">RND</span></button>
     <div class="viz-divider"></div>
     <button class="viz-color-btn active" onclick="setColorMode('theme')" id="vc-theme"><span class="vp-icon">◈</span><span class="vc-label">THEME</span></button>
-    <button class="viz-color-btn" onclick="setColorMode('cycle')" id="vc-cycle"><span class="vp-icon">◌</span><span class="vc-label">CYCLE</span></button>
-    <button class="viz-color-btn" onclick="setColorMode('beat')" id="vc-beat"><span class="vp-icon">◉</span><span class="vc-label">BEAT</span></button>
+    <button class="viz-color-btn" onclick="setColorMode('drift')" id="vc-drift"><span class="vp-icon">◌</span><span class="vc-label">DRIFT</span></button>
+    <button class="viz-color-btn" onclick="setColorMode('bloom')" id="vc-bloom"><span class="vp-icon">◉</span><span class="vc-label">BLOOM</span></button>
     <button class="viz-color-btn" onclick="setColorMode('prism')" id="vc-prism"><span class="vp-icon">◈</span><span class="vc-label">PRISM</span></button>
     <button class="viz-color-btn" onclick="setColorMode('fire')" id="vc-fire"><span class="vp-icon">◈</span><span class="vc-label">FIRE</span></button>
     <button class="viz-color-btn" onclick="setColorMode('ice')" id="vc-ice"><span class="vp-icon">◈</span><span class="vc-label">ICE</span></button>
@@ -564,8 +564,9 @@ const PALEST_PALETTE=[[10,10,10],[239,0,0],[240,240,240],[0,151,54],[239,0,0],[1
 function resolveColor(fft,idx,total){
   switch(colorMode){
     case 'theme':{const c=getComputedStyle(document.documentElement).getPropertyValue('--waveform').trim();return hexToRgb(c);}
-    case 'cycle':{colorHue=(colorHue+0.4)%360;const[r,g,b]=hslToRgb(colorHue,1,0.55);return{r,g,b};}
-    case 'beat':{const bass=fft?fftAvg(fft,0,8)/255:0;if(bass>0.65&&prevBass<0.55){beatHue=(beatHue+72+Math.random()*40)%360;const[r,g,b]=hslToRgb(beatHue,1,0.6);beatColorRgb={r,g,b};}prevBass=bass;return beatColorRgb;}
+    case 'drift':{const overall=fft?fftAvg(fft,0,200)/255:0.1;colorHue=(colorHue+0.06+overall*0.18)%360;const[r,g,b]=hslToRgb(colorHue,1,0.58);return{r,g,b};}
+    case 'bloom':{const bass=fft?fftAvg(fft,0,8)/255:0;if(bass>0.65&&prevBass<0.5){beatHue=(beatHue+60+Math.random()*120)%360;}prevBass=bass;// Slowly interpolate toward target — no instant jump
+      const diff=((beatHue-colorHue+540)%360)-180;colorHue=(colorHue+diff*0.015+360)%360;const[r,g,b]=hslToRgb(colorHue,1,0.6);return{r,g,b};}
     case 'prism':{const h=(idx/total)*360;const[r,g,b]=hslToRgb(h,1,0.6);return{r,g,b};}
     case 'fire':{const pi=Math.floor((idx/total)*FIRE_PALETTE.length);const[r,g,b]=FIRE_PALETTE[pi%FIRE_PALETTE.length];return{r,g,b};}
     case 'ice':{const pi=Math.floor((idx/total)*ICE_PALETTE.length);const[r,g,b]=ICE_PALETTE[pi%ICE_PALETTE.length];return{r,g,b};}
@@ -752,77 +753,159 @@ function drawStarPath(cx,cy,outerR,innerR,n,rotation){
 // ──────────────────────────────────────────────────────
 //  2. SPECTRUM
 // ──────────────────────────────────────────────────────
-let specPeaks=[];
+let specPeaks=[],specTime=0;
 function drawSpectrum(W,H,fft){
-  vizCx.fillStyle='rgba(0,0,0,0.22)';vizCx.fillRect(0,0,W,H);
+  specTime+=0.018;
+  const bass=fftAvg(fft,0,8)/255;
+  const overall=fftAvg(fft,0,200)/255;
+  vizCx.fillStyle=`rgba(0,0,0,${0.18+bass*0.08})`;vizCx.fillRect(0,0,W,H);
   const bars=140;const bw=W/bars-1;
   if(specPeaks.length!==bars)specPeaks=Array(bars).fill(0);
+  // Slow wave that rolls across bar heights independently of audio
   for(let i=0;i<bars;i++){
     const idx=Math.floor((i/bars)*fft.length*0.75);
-    const v=fft[idx]/255;const bh=v*H*0.88;
+    const v=fft[idx]/255;
+    // Autonomous wave modulation — bars breathe even in silence
+    const wave=Math.sin(specTime*1.2+(i/bars)*Math.PI*3)*0.08+Math.sin(specTime*0.7+(i/bars)*Math.PI*6)*0.04;
+    const bh=Math.max(2,(v+wave)*H*0.88);
     const x=i*(bw+1);
-    if(bh>specPeaks[i])specPeaks[i]=bh;else specPeaks[i]*=0.965;
+    if(bh>specPeaks[i])specPeaks[i]=bh;else specPeaks[i]*=0.962;
     const rgb=resolveColor(fft,i,bars);
     const grad=vizCx.createLinearGradient(0,H,0,H-bh);
-    grad.addColorStop(0,rgbStr(rgb,0.95));grad.addColorStop(0.5,rgbStr(rgb,0.5));grad.addColorStop(1,rgbStr(rgb,0.08));
+    grad.addColorStop(0,rgbStr(rgb,0.95));grad.addColorStop(0.5,rgbStr(rgb,0.5));grad.addColorStop(1,rgbStr(rgb,0.05));
     vizCx.fillStyle=grad;vizCx.fillRect(x,H-bh,bw,bh);
+    // Mirror reflection at bottom
+    vizCx.save();vizCx.globalAlpha=0.15;
+    const grad2=vizCx.createLinearGradient(0,H,0,H+bh*0.3);
+    grad2.addColorStop(0,rgbStr(rgb,0.5));grad2.addColorStop(1,rgbStr(rgb,0));
+    vizCx.fillStyle=grad2;vizCx.fillRect(x,H,bw,bh*0.3);vizCx.restore();
+    // Peak line
     vizCx.fillStyle=rgbStr(rgb,0.95);vizCx.globalAlpha=1;
     vizCx.fillRect(x,H-specPeaks[i]-2,bw,2);
   }
-  vizCx.fillStyle='rgba(0,0,0,0.05)';
+  vizCx.fillStyle='rgba(0,0,0,0.04)';
   for(let y=0;y<H;y+=4)vizCx.fillRect(0,y,W,2);
 }
 
 // ──────────────────────────────────────────────────────
-//  3. SCOPE (Oscilloscope + Lissajous)
+//  3. SCOPE
 // ──────────────────────────────────────────────────────
-let scopeMode=0,scopeTimer=0;
+let scopeMode=0,scopeTimer=0,scopeZoom=1,scopeShift=0;
 function drawScope(W,H,time,fft){
-  vizCx.fillStyle='rgba(0,0,0,0.18)';vizCx.fillRect(0,0,W,H);
-  scopeTimer++;if(scopeTimer>500){scopeMode=(scopeMode+1)%2;scopeTimer=0;}
+  const bass=fftAvg(fft,0,8)/255;
+  const overall=fftAvg(fft,0,200)/255;
+  // Slow fade — longer trail for more movement feel
+  vizCx.fillStyle=`rgba(0,0,0,${0.12+bass*0.1})`;vizCx.fillRect(0,0,W,H);
+  scopeTimer++;if(scopeTimer>600){scopeMode=(scopeMode+1)%3;scopeTimer=0;}
+  // Autonomous zoom pulse
+  scopeZoom+=(1+overall*0.4-scopeZoom)*0.04;
+  scopeShift+=0.008+bass*0.02;
   const rgb=resolveColor(fft,0,1);
+
   if(scopeMode===0){
-    vizCx.strokeStyle=rgbStr(rgb,0.9);vizCx.lineWidth=2;vizCx.beginPath();
-    const sw=W/time.length;let x=0;
-    for(let i=0;i<time.length;i++){const v=time[i]/128,y=H/2+(v-1)*H*0.46;i===0?vizCx.moveTo(x,y):vizCx.lineTo(x,y);x+=sw;}
-    vizCx.stroke();
-    vizCx.save();vizCx.globalAlpha=0.12;vizCx.strokeStyle=rgbStr(rgb,1);vizCx.lineWidth=10;vizCx.beginPath();
-    x=0;for(let i=0;i<time.length;i++){const v=time[i]/128,y=H/2+(v-1)*H*0.46;i===0?vizCx.moveTo(x,y):vizCx.lineTo(x,y);x+=sw;}
-    vizCx.stroke();vizCx.restore();
-    vizCx.strokeStyle=rgbStr(rgb,0.08);vizCx.lineWidth=0.5;
+    // Classic — with autonomous vertical drift and zoom
+    for(let pass=0;pass<2;pass++){
+      vizCx.save();
+      vizCx.translate(W/2,H/2);vizCx.scale(scopeZoom,scopeZoom);vizCx.translate(-W/2,-H/2);
+      vizCx.strokeStyle=rgbStr(rgb,pass===0?0.9:0.12);
+      vizCx.lineWidth=pass===0?2:10;vizCx.beginPath();
+      const sw=W/time.length;let x=0;
+      for(let i=0;i<time.length;i++){
+        const v=time[i]/128;
+        const drift=Math.sin(scopeShift+i/time.length*Math.PI*2)*H*0.04*overall;
+        const y=H/2+(v-1)*H*0.44+drift;
+        i===0?vizCx.moveTo(x,y):vizCx.lineTo(x,y);x+=sw;
+      }
+      vizCx.stroke();vizCx.restore();
+    }
+    // Grid
+    vizCx.strokeStyle=rgbStr(rgb,0.07);vizCx.lineWidth=0.5;
     for(let i=1;i<4;i++){const y=(i/4)*H;vizCx.beginPath();vizCx.moveTo(0,y);vizCx.lineTo(W,y);vizCx.stroke();}
     for(let i=1;i<8;i++){const x=(i/8)*W;vizCx.beginPath();vizCx.moveTo(x,0);vizCx.lineTo(x,H);vizCx.stroke();}
-  }else{
-    vizCx.strokeStyle=rgbStr(rgb,0.8);vizCx.lineWidth=1.5;vizCx.beginPath();
+  } else if(scopeMode===1){
+    // Lissajous with slow rotation
+    vizCx.save();vizCx.translate(W/2,H/2);vizCx.rotate(scopeShift*0.1);
+    vizCx.strokeStyle=rgbStr(rgb,0.85);vizCx.lineWidth=1.5;vizCx.beginPath();
     const half=Math.floor(time.length/2);
-    for(let i=0;i<half;i++){const x=W/2+(time[i]/128-1)*W*0.46;const y=H/2+(time[i+half]/128-1)*H*0.46;i===0?vizCx.moveTo(x,y):vizCx.lineTo(x,y);}
+    for(let i=0;i<half;i++){
+      const x=(time[i]/128-1)*W*0.44*scopeZoom;
+      const y=(time[i+half]/128-1)*H*0.44*scopeZoom;
+      i===0?vizCx.moveTo(x,y):vizCx.lineTo(x,y);
+    }
     vizCx.stroke();
+    vizCx.save();vizCx.globalAlpha=0.15;vizCx.strokeStyle=rgbStr(rgb,1);vizCx.lineWidth=8;vizCx.stroke();vizCx.restore();
+    vizCx.restore();
+  } else {
+    // XY scatter — dots placed by frequency pairs, auto-rotating
+    vizCx.save();vizCx.translate(W/2,H/2);vizCx.rotate(scopeShift*0.05);
+    const pts=Math.min(512,fft.length);
+    for(let i=0;i<pts-1;i++){
+      const x=(fft[i]/255-0.5)*W*0.9;
+      const y=(fft[i+1]/255-0.5)*H*0.9;
+      const rgb2=resolveColor(fft,i,pts);
+      vizCx.globalAlpha=fft[i]/255*0.8;
+      vizCx.fillStyle=rgbStr(rgb2,1);
+      const sz=Math.max(0.5,fft[i]/255*4);
+      vizCx.fillRect(x-sz/2,y-sz/2,sz,sz);
+    }
+    vizCx.globalAlpha=1;vizCx.restore();
   }
 }
 
 // ──────────────────────────────────────────────────────
 //  4. RADIAL
 // ──────────────────────────────────────────────────────
-let radRot=0;
+let radRot=0,radRot2=0,radPulse=0,radWave=0;
 function drawRadial(W,H,fft){
-  vizCx.fillStyle='rgba(0,0,0,0.2)';vizCx.fillRect(0,0,W,H);
-  const cx=W/2,cy=H/2,maxR=Math.min(W,H)*0.44,minR=maxR*0.22;
   const bass=fftAvg(fft,0,8)/255;
-  radRot+=0.003+bass*0.012;
+  const mid=fftAvg(fft,8,80)/255;
+  const overall=fftAvg(fft,0,200)/255;
+  vizCx.fillStyle=`rgba(0,0,0,${0.18+bass*0.08})`;vizCx.fillRect(0,0,W,H);
+  const cx=W/2,cy=H/2;
+  const maxR=Math.min(W,H)*0.44,minR=maxR*0.18;
+  // Two counter-rotating layers
+  radRot+=0.004+bass*0.014;
+  radRot2-=0.002+mid*0.008;
+  radWave+=0.03;
+  if(bass>0.65&&radPulse<0.3)radPulse=1.0;
+  radPulse*=0.92;
+
   const bars=200;
-  for(let i=0;i<bars;i++){
-    const idx=Math.floor((i/bars)*fft.length*0.8);
-    const v=fft[idx]/255;
-    const angle=(i/bars)*Math.PI*2+radRot;
-    const r1=minR+(v*(maxR-minR));
-    const rgb=resolveColor(fft,i,bars);
-    vizCx.strokeStyle=rgbStr(rgb,0.7+v*0.3);vizCx.lineWidth=1.8;
-    vizCx.globalAlpha=1;
-    vizCx.beginPath();
-    vizCx.moveTo(cx+Math.cos(angle)*minR,cy+Math.sin(angle)*minR);
-    vizCx.lineTo(cx+Math.cos(angle)*r1,cy+Math.sin(angle)*r1);
-    vizCx.stroke();
+  for(let layer=0;layer<2;layer++){
+    const rot=layer===0?radRot:radRot2;
+    const alpha=layer===0?1:0.45;
+    const scale=layer===0?1:0.6;
+    for(let i=0;i<bars;i++){
+      const idx=Math.floor((i/bars)*fft.length*(layer===0?0.8:0.5));
+      const v=fft[idx]/255;
+      // Autonomous wave adds ripple even in silence
+      const autoWave=Math.sin(radWave+i/bars*Math.PI*4)*0.06;
+      const angle=(i/bars)*Math.PI*2+rot;
+      const r0=minR*scale;
+      const r1=r0+(v+autoWave)*((maxR-minR)*scale);
+      const rgb=resolveColor(fft,i+layer*bars,bars*2);
+      vizCx.strokeStyle=rgbStr(rgb,alpha*(0.5+v*0.5));
+      vizCx.lineWidth=layer===0?1.8:1;
+      vizCx.globalAlpha=alpha;
+      vizCx.beginPath();
+      vizCx.moveTo(cx+Math.cos(angle)*r0,cy+Math.sin(angle)*r0);
+      vizCx.lineTo(cx+Math.cos(angle)*r1,cy+Math.sin(angle)*r1);
+      vizCx.stroke();
+    }
   }
+
+  // Pulse ring
+  if(radPulse>0.05){
+    const rgb0=resolveColor(fft,0,1);
+    const pr=minR+radPulse*(maxR-minR);
+    vizCx.globalAlpha=radPulse*0.7;
+    vizCx.strokeStyle=rgbStr(rgb0,1);vizCx.lineWidth=2;
+    vizCx.beginPath();vizCx.arc(cx,cy,pr,0,Math.PI*2);vizCx.stroke();
+    vizCx.globalAlpha=radPulse*0.2;vizCx.lineWidth=8;
+    vizCx.beginPath();vizCx.arc(cx,cy,pr,0,Math.PI*2);vizCx.stroke();
+  }
+
+  // Center circle
   const rgb0=resolveColor(fft,0,1);
   vizCx.globalAlpha=0.3+bass*0.5;vizCx.strokeStyle=rgbStr(rgb0,1);vizCx.lineWidth=1;
   vizCx.beginPath();vizCx.arc(cx,cy,minR,0,Math.PI*2);vizCx.stroke();
@@ -830,145 +913,148 @@ function drawRadial(W,H,fft){
 }
 
 // ──────────────────────────────────────────────────────
-//  5. MIRROR KALEIDOSCOPE (replaces PARTS)
+//  5. MIRROR KALEIDOSCOPE
 // ──────────────────────────────────────────────────────
-let mirrorRot=0,mirrorSegs=8,mirrorTime=0;
+let mirrorRot=0,mirrorSegs=8,mirrorTime=0,mirrorZoom=1;
 function drawMirror(W,H,fft,time){
   const bass=fftAvg(fft,0,8)/255;
   const mid=fftAvg(fft,8,80)/255;
   const overall=fftAvg(fft,0,200)/255;
-  mirrorTime+=0.008+bass*0.02;
-  mirrorRot+=0.002+bass*0.008;
+  mirrorTime+=0.012+bass*0.025;
+  mirrorRot+=0.003+bass*0.012;
+  // Zoom breathes autonomously
+  mirrorZoom+=(1+overall*0.35+Math.sin(mirrorTime*0.4)*0.08-mirrorZoom)*0.05;
 
-  // Target segment count morphs with mids
-  const targetSegs=bass>0.7?Math.round(4+mid*12)*2:mirrorSegs;
-  mirrorSegs+=(targetSegs-mirrorSegs)*0.02;
+  const targetSegs=bass>0.6?Math.round(4+mid*14)*2:Math.round(6+mid*6)*2;
+  mirrorSegs+=(targetSegs-mirrorSegs)*0.025;
   const segs=Math.max(4,Math.round(mirrorSegs/2)*2);
 
-  vizCx.fillStyle=`rgba(0,0,0,${0.12+bass*0.05})`;
+  vizCx.fillStyle=`rgba(0,0,0,${0.1+bass*0.06})`;
   vizCx.fillRect(0,0,W,H);
 
   const cx=W/2,cy=H/2;
-  const R=Math.min(W,H)*0.46;
+  const R=Math.min(W,H)*0.48*mirrorZoom;
 
   for(let seg=0;seg<segs;seg++){
     vizCx.save();
     vizCx.translate(cx,cy);
     vizCx.rotate((seg/segs)*Math.PI*2+mirrorRot);
-    if(seg%2===1){vizCx.scale(1,-1);}
+    if(seg%2===1)vizCx.scale(1,-1);
 
     const wedge=(Math.PI*2)/segs;
     vizCx.beginPath();vizCx.moveTo(0,0);
     vizCx.arc(0,0,R,-wedge/2,wedge/2);vizCx.closePath();vizCx.clip();
 
-    // Waveform ribbon in wedge
     const rgb=resolveColor(fft,seg,segs);
-    vizCx.strokeStyle=rgbStr(rgb,0.85);vizCx.lineWidth=1.5+overall;vizCx.beginPath();
-    const pts=time.length;
-    for(let i=0;i<pts;i++){
-      const angle=(i/pts-0.5)*wedge;
-      const v=time[i]/128;
-      const r=R*0.15+v*R*0.55+Math.sin(mirrorTime*2+i*0.02)*R*0.06*bass;
-      const x=Math.cos(angle)*r,y=Math.sin(angle)*r;
-      i===0?vizCx.moveTo(x,y):vizCx.lineTo(x,y);
+    // Waveform ribbon — richer formula with two sin layers
+    for(let pass=0;pass<2;pass++){
+      vizCx.strokeStyle=rgbStr(rgb,pass===0?0.9:0.15);
+      vizCx.lineWidth=pass===0?(1.5+overall):(10+overall*8);
+      vizCx.beginPath();
+      const pts=time.length;
+      for(let i=0;i<pts;i++){
+        const angle=(i/pts-0.5)*wedge;
+        const v=time[i]/128;
+        const auto=Math.sin(mirrorTime*1.8+i*0.015)*0.07+Math.sin(mirrorTime*0.9+(seg+i)*0.03)*0.04;
+        const r=R*0.12+(v+auto)*R*0.55+Math.sin(mirrorTime*2.2+i*0.02)*R*0.08*(bass+0.2);
+        vizCx.lineTo(Math.cos(angle)*r,Math.sin(angle)*r);
+      }
+      vizCx.stroke();
     }
-    vizCx.stroke();
-    // Glow pass
-    vizCx.save();vizCx.globalAlpha=0.15;vizCx.lineWidth=8+overall*6;
-    vizCx.beginPath();
-    for(let i=0;i<pts;i++){
-      const angle=(i/pts-0.5)*wedge;
-      const v=time[i]/128;
-      const r=R*0.15+v*R*0.55+Math.sin(mirrorTime*2+i*0.02)*R*0.06*bass;
-      const x=Math.cos(angle)*r,y=Math.sin(angle)*r;
-      i===0?vizCx.moveTo(x,y):vizCx.lineTo(x,y);
-    }
-    vizCx.stroke();vizCx.restore();
 
     // Spectrum arc
-    const bars=60;
+    const bars=64;
     for(let b=0;b<bars;b++){
       const idx=Math.floor((b/bars)*fft.length*0.7);
       const v=fft[idx]/255;
+      const auto=Math.sin(mirrorTime+b*0.1)*0.05;
       const angle=(b/bars-0.5)*wedge*0.95;
-      const r0=R*0.05,r1=r0+v*R*0.35;
+      const r0=R*0.04,r1=r0+(v+auto)*R*0.38;
       const rgb2=resolveColor(fft,b+seg*bars,segs*bars);
-      vizCx.strokeStyle=rgbStr(rgb2,0.6+v*0.4);vizCx.lineWidth=1;
-      vizCx.globalAlpha=1;
+      vizCx.strokeStyle=rgbStr(rgb2,0.65+v*0.35);vizCx.lineWidth=1;vizCx.globalAlpha=1;
       vizCx.beginPath();
       vizCx.moveTo(Math.cos(angle)*r0,Math.sin(angle)*r0);
       vizCx.lineTo(Math.cos(angle)*r1,Math.sin(angle)*r1);
       vizCx.stroke();
     }
-
     vizCx.restore();
   }
 
-  // Center dot
   const rgb0=resolveColor(fft,0,1);
-  const cSize=4+overall*16+bass*20;
-  vizCx.globalAlpha=0.8;vizCx.fillStyle=rgbStr(rgb0,1);
+  const cSize=5+overall*18+bass*22;
+  vizCx.globalAlpha=0.85;vizCx.fillStyle=rgbStr(rgb0,1);
   vizCx.beginPath();vizCx.arc(cx,cy,cSize,0,Math.PI*2);vizCx.fill();
-  vizCx.globalAlpha=0.2;vizCx.beginPath();vizCx.arc(cx,cy,cSize*3,0,Math.PI*2);vizCx.fill();
+  vizCx.globalAlpha=0.18;vizCx.beginPath();vizCx.arc(cx,cy,cSize*3.5,0,Math.PI*2);vizCx.fill();
   vizCx.globalAlpha=1;
 }
 
 // ──────────────────────────────────────────────────────
-//  6. PLASMA — full screen 3D mesh
+//  6. PLASMA — displaced wave mesh
 // ──────────────────────────────────────────────────────
 let plasmaT=0;
 function drawPlasma(W,H,fft,time){
   const bass=fftAvg(fft,0,8)/255;
   const mid=fftAvg(fft,8,80)/255;
-  plasmaT+=0.02+bass*0.05;
-  vizCx.fillStyle=`rgba(0,0,0,0.18)`;vizCx.fillRect(0,0,W,H);
+  const high=fftAvg(fft,80,200)/255;
+  plasmaT+=0.022+bass*0.055;
+  vizCx.fillStyle=`rgba(0,0,0,${0.16+bass*0.08})`;vizCx.fillRect(0,0,W,H);
 
-  // Grid fills screen with breathing room — tight enough to read, not wall-to-wall
-  const cols=48,rows=27;
-  const cw=(W*0.92)/cols,ch=(H*0.92)/rows;
-  const ox=W*0.04,oy=H*0.04;
-
+  const cols=44,rows=25;
+  const cw=W/cols,ch=H/rows;
+  // Pre-compute displaced node positions — THIS is what makes it wavy
+  const pts=[];
   for(let r=0;r<=rows;r++){
+    pts[r]=[];
     for(let c=0;c<=cols;c++){
       const fi=Math.floor(((c+r*(cols+1))/((cols+1)*(rows+1)))*fft.length);
       const v=fft[fi]/255;
-      const noise=Math.sin(c*0.35+plasmaT)*Math.cos(r*0.35+plasmaT*0.8)+Math.sin((c+r)*0.2+plasmaT*0.5)*0.5;
-      const z=(v*0.7+noise*0.3+1)*0.5;
-      const sx=ox+c*cw;
-      const sy=oy+r*ch;
-      const ptSize=Math.max(0.8,(v*5+mid*2)*(0.5+z*0.8));
+      // Multi-layer sinusoidal interference — nodes physically move
+      const waveX=Math.sin(r*0.4+plasmaT*1.1)*cw*0.6
+                 +Math.sin(c*0.3+plasmaT*0.7)*cw*0.3
+                 +Math.sin((c+r)*0.25+plasmaT*0.5)*cw*0.2;
+      const waveY=Math.cos(c*0.4+plasmaT*0.9)*ch*0.7
+                 +Math.cos(r*0.35+plasmaT*1.3)*ch*0.35
+                 +Math.sin((c-r)*0.2+plasmaT*0.8)*ch*0.25;
+      // FFT amplitude adds extra displacement on top of autonomous wave
+      const ampDisp=v*cw*1.4;
+      const sx=c*cw+waveX+Math.sin(plasmaT*0.6+c*0.5)*ampDisp*0.5;
+      const sy=r*ch+waveY+Math.cos(plasmaT*0.8+r*0.5)*ampDisp*0.5;
+      const brightness=0.4+v*0.6+Math.abs(Math.sin(plasmaT+c*0.2+r*0.3))*0.2;
+      pts[r][c]={sx,sy,v,brightness};
+    }
+  }
+
+  // Draw connections first (behind points)
+  for(let r=0;r<=rows;r++){
+    for(let c=0;c<=cols;c++){
+      const p=pts[r][c];
       const rgb=resolveColor(fft,c+r*(cols+1),(cols+1)*(rows+1));
-      const alpha=Math.min(1,(v+mid*0.5)*1.4*(0.4+z*0.6));
-
-      vizCx.globalAlpha=alpha;vizCx.fillStyle=rgbStr(rgb,1);
-      vizCx.fillRect(sx-ptSize/2,sy-ptSize/2,ptSize,ptSize);
-
-      // Connect right
       if(c<cols){
-        const fi2=Math.floor(((c+1+r*(cols+1))/((cols+1)*(rows+1)))*fft.length);
-        const v2=fft[fi2]/255;
-        const noise2=Math.sin((c+1)*0.35+plasmaT)*Math.cos(r*0.35+plasmaT*0.8)+Math.sin((c+1+r)*0.2+plasmaT*0.5)*0.5;
-        const z2=(v2*0.7+noise2*0.3+1)*0.5;
-        const sx2=ox+(c+1)*cw;
-        const sy2=oy+r*ch;
-        const rgb2=resolveColor(fft,c+1+r*(cols+1),(cols+1)*(rows+1));
-        vizCx.globalAlpha=Math.min(0.8,(v+v2)*0.7);
-        vizCx.strokeStyle=rgbStr(rgb2,1);vizCx.lineWidth=0.7;
-        vizCx.beginPath();vizCx.moveTo(sx,sy);vizCx.lineTo(sx2,sy2);vizCx.stroke();
+        const p2=pts[r][c+1];
+        const a=Math.min(0.85,(p.v+p2.v)*0.8*p.brightness);
+        vizCx.globalAlpha=a;vizCx.strokeStyle=rgbStr(rgb,1);
+        vizCx.lineWidth=0.6+p.v*1.2;
+        vizCx.beginPath();vizCx.moveTo(p.sx,p.sy);vizCx.lineTo(p2.sx,p2.sy);vizCx.stroke();
       }
-      // Connect down
       if(r<rows){
-        const fi3=Math.floor(((c+(r+1)*(cols+1))/((cols+1)*(rows+1)))*fft.length);
-        const v3=fft[fi3]/255;
-        const noise3=Math.sin(c*0.35+plasmaT)*Math.cos((r+1)*0.35+plasmaT*0.8)+Math.sin((c+r+1)*0.2+plasmaT*0.5)*0.5;
-        const z3=(v3*0.7+noise3*0.3+1)*0.5;
-        const sx3=ox+c*cw;
-        const sy3=oy+(r+1)*ch;
-        const rgb3=resolveColor(fft,c+(r+1)*(cols+1),(cols+1)*(rows+1));
-        vizCx.globalAlpha=Math.min(0.8,(v+v3)*0.7);
-        vizCx.strokeStyle=rgbStr(rgb3,1);vizCx.lineWidth=0.7;
-        vizCx.beginPath();vizCx.moveTo(sx,sy);vizCx.lineTo(sx3,sy3);vizCx.stroke();
+        const p3=pts[r+1][c];
+        const a=Math.min(0.85,(p.v+p3.v)*0.8*p.brightness);
+        vizCx.globalAlpha=a;vizCx.strokeStyle=rgbStr(rgb,1);
+        vizCx.lineWidth=0.6+p.v*1.2;
+        vizCx.beginPath();vizCx.moveTo(p.sx,p.sy);vizCx.lineTo(p3.sx,p3.sy);vizCx.stroke();
       }
+    }
+  }
+
+  // Draw points on top
+  for(let r=0;r<=rows;r++){
+    for(let c=0;c<=cols;c++){
+      const p=pts[r][c];
+      const rgb=resolveColor(fft,c+r*(cols+1),(cols+1)*(rows+1));
+      const ptSize=Math.max(0.8,(p.v*5+mid*2+high)*p.brightness);
+      vizCx.globalAlpha=Math.min(1,p.brightness*(0.6+p.v*0.8));
+      vizCx.fillStyle=rgbStr(rgb,1);
+      vizCx.beginPath();vizCx.arc(p.sx,p.sy,ptSize*0.7,0,Math.PI*2);vizCx.fill();
     }
   }
   vizCx.globalAlpha=1;
