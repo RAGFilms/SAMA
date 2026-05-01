@@ -189,8 +189,8 @@ Click `⬡ VIZ` (desktop) or the floating `⬡` button (mobile) to open the visu
 | Button | Name | Description |
 |--------|------|-------------|
 | THEME | Theme | Inherits the active hardware theme phosphor color |
-| CYCLE | Cycle | Slow continuous HSL hue rotation through the full spectrum |
-| BEAT | Beat | Hue jumps to a new random value on every detected kick or bass transient |
+| DRIFT | Drift | Hue rotates slowly, pace tied to overall amplitude — louder passages move faster, quiet passages nearly stop |
+| BLOOM | Bloom | On bass hits, hue slowly blooms toward a new color over several seconds — no abrupt jumps |
 | PRISM | Prism | Each bar or element gets its own hue, spreading the full spectrum simultaneously |
 | FIRE | Fire | Red → orange → yellow gradient mapped across frequency bands |
 | ICE | Ice | Deep blue → cyan → white gradient |
@@ -386,8 +386,3 @@ SAMA is a passion project maintained by AGW Entertainment. Feature requests and 
 © AGW Entertainment. All rights reserved. See [LICENSE](LICENSE) for full terms.
 
 Personal use and unmodified sharing with attribution is permitted. Commercial use and derivative works require written permission from AGW Entertainment.
-
----
-
-*Dedicated to Sama' Abdulhadi — keep playing.*
-
