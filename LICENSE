@@ -1,0 +1,57 @@
+Copyright (c) 2025 AGW Entertainment
+All rights reserved.
+
+SAMA — Spectral Audio Morphing Application
+
+This software and its source code are the exclusive intellectual property of
+AGW Entertainment. The following terms govern its use, distribution, and
+modification.
+
+PERMITTED USE
+You may download, run, and use this software for personal, non-commercial
+purposes. You may share unmodified copies of this software provided this
+license and all copyright notices remain intact.
+
+RESTRICTIONS
+You may not:
+  - Use this software or any portion of it for commercial purposes without
+    prior written permission from AGW Entertainment
+  - Modify, adapt, translate, or create derivative works based on this
+    software without prior written permission from AGW Entertainment
+  - Sublicense, sell, rent, lease, or transfer rights to this software
+  - Remove or obscure any copyright, trademark, or attribution notices
+  - Represent this software as your own work
+
+THIRD-PARTY COMPONENTS
+This software makes use of the following open-source libraries, each
+governed by their respective licenses:
+
+  DSEG Font                 SIL Open Font License 1.1
+  midi-player-js            MIT License
+  soundfont-player          MIT License
+  Radio Browser API         CC0 1.0 Universal (Public Domain)
+
+These components are used in unmodified form and full credit is given to
+their respective authors.
+
+ATTRIBUTION
+Any permitted distribution or public display of this software must include
+the following attribution:
+
+  SAMA — Spectral Audio Morphing Application
+  Created by AGW Entertainment
+  Dedicated to Sama' Abdulhadi
+
+DISCLAIMER
+THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. IN NO EVENT SHALL
+AGW ENTERTAINMENT BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF,
+OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+CONTACT
+For licensing inquiries, commercial use requests, or permissions beyond the
+scope of this license, contact AGW Entertainment through the repository
+issue tracker.
