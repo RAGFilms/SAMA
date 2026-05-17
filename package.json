@@ -1,0 +1,36 @@
+{
+  "name": "sama",
+  "version": "1.0.0",
+  "description": "Spectral Audio Morphing Application",
+  "author": "AGW Entertainment",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux"
+  },
+  "build": {
+    "appId": "com.agwentertainment.sama",
+    "productName": "SAMA",
+    "copyright": "© AGW Entertainment. All rights reserved.",
+    "directories": { "output": "dist" },
+    "files": ["main.js", "**/*"],
+    "win": {
+      "icon": "SAMA PARTS/icon-256.png",
+      "target": "nsis"
+    },
+    "mac": {
+      "icon": "SAMA PARTS/icon-512.png",
+      "category": "public.app-category.music"
+    },
+    "linux": {
+      "icon": "SAMA PARTS/icon-512.png",
+      "target": "AppImage"
+    }
+  },
+  "devDependencies": {
+    "electron": "^34.0.0",
+    "electron-builder": "^25.0.0"
+  }
+}
