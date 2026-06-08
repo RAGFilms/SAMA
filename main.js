@@ -92,10 +92,18 @@ function createWindow() {
       window.addEventListener('resize', scaleUI);
       scaleUI();
 
-      // Drag strip — top of panel
+      // Drag strip — full width across the top. Height is a % of the window so
+      // it scales with the UI and always stays above the style buttons.
       const dragBar = document.createElement('div');
-      dragBar.style.cssText = 'position:fixed;top:0;left:0;right:0;width:100%;height:60px;-webkit-app-region:drag;z-index:9999;pointer-events:none';
+      dragBar.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:7%;-webkit-app-region:drag;z-index:9999;pointer-events:none';
       document.body.appendChild(dragBar);
+
+      // Carve the top-right corner OUT of the drag region (no-drag) so the
+      // green / amber / red window dots stay clickable. pointer-events:none lets
+      // the actual clicks pass through to the dot buttons beneath.
+      const dotsGuard = document.createElement('div');
+      dotsGuard.style.cssText = 'position:fixed;top:0;right:0;width:13%;height:8%;-webkit-app-region:no-drag;z-index:10000;pointer-events:none';
+      document.body.appendChild(dotsGuard);
     `)
   })
 }
