@@ -150,6 +150,7 @@ input[type=file]{display:none!important}
 .radio-preset-png.loaded{opacity:.9;filter:drop-shadow(0 0 6px var(--lcd))}
 .radio-preset-png.playing{opacity:1;filter:drop-shadow(0 0 12px var(--lcd)) drop-shadow(0 0 24px var(--lcd-dim))}
 .radio-preset-png:hover{opacity:.85}
+.radio-hotspot{position:absolute;pointer-events:auto;cursor:pointer;background:transparent;z-index:20}
 #genreControls{position:absolute;left:910px;top:335px;width:265px;pointer-events:auto}
 .glass-label{font-family:'Rajdhani',sans-serif;font-size:13px;letter-spacing:1px;text-transform:uppercase;color:var(--mono-dim);margin-bottom:5px;text-align:center}
 .glass-select,.glass-input{width:100%;padding:6px 8px;background:rgba(0,0,0,.85);border:1px solid var(--mono-dim);color:var(--lcd);font-family:'Rajdhani',sans-serif;font-size:14px;letter-spacing:0px;text-transform:uppercase;outline:none;cursor:pointer;margin-bottom:7px;transition:border-color .15s}
@@ -327,8 +328,13 @@ input[type=file]{display:none!important}
   <!-- ring: between presets (x=394) and station panel (x=901); center x=648, y=490; canvas 360x360; left=468, top=310 -->
   <canvas id="radioRing" class="ring" width="360" height="360" style="left:330px;top:300px;width:360px;height:360px"></canvas>
 
-  <img id="radioSelectBtn" class="layer" src="SAMA PARTS/SAMA-CONSOLE-AMBER-MODE-STATION-SELECT-BUTTON.png" style="pointer-events:auto;cursor:pointer" onclick="selectHighlighted()">
-  <img class="layer" src="SAMA PARTS/SAMA-CONSOLE-PALESTINE-MODE-STATION-FAVORITE-BUTTON.png" style="pointer-events:auto;cursor:pointer" onclick="toggleFavHighlighted()">
+  <img id="radioSelectBtn" class="layer" src="SAMA PARTS/SAMA-CONSOLE-AMBER-MODE-STATION-SELECT-BUTTON.png">
+  <img class="layer" src="SAMA PARTS/SAMA-CONSOLE-PALESTINE-MODE-STATION-FAVORITE-BUTTON.png">
+  <!-- Clickable hotspots over the SELECT / FAVORITE button graphics (layer PNGs are pointer-events:none) -->
+  <div class="radio-hotspot" title="SELECT — play highlighted station"
+    style="left:876px;top:219px;width:156px;height:50px" onclick="selectHighlighted()"></div>
+  <div class="radio-hotspot" title="FAVORITE — save / unsave highlighted station"
+    style="left:1032px;top:219px;width:156px;height:50px" onclick="toggleFavHighlighted()"></div>
   <img class="layer" src="SAMA PARTS/SAMA-CONSOLE-TEXT-STATIONS.png">
   <img class="layer" src="SAMA PARTS/SAMA-CONSOLE-RADIO-GENRE-SELECTOR-GLASS-PANEL.png">
   <img class="layer" src="SAMA PARTS/SAMA-CONSOLE-RADIO-STATION-MENU-GLASS-PANEL.png">
