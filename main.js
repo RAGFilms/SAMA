@@ -94,7 +94,7 @@ function createWindow() {
 
       // Drag strip — top of panel
       const dragBar = document.createElement('div');
-      dragBar.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:22px;-webkit-app-region:drag;z-index:9999;pointer-events:none';
+      dragBar.style.cssText = 'position:fixed;top:0;left:0;right:0;width:100%;height:60px;-webkit-app-region:drag;z-index:9999;pointer-events:none';
       document.body.appendChild(dragBar);
     `)
   })

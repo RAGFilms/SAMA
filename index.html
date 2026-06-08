@@ -163,9 +163,11 @@ input[type=file]{display:none!important}
 #stationScroll{position:absolute;left:910px;top:543px;width:265px;height:330px;overflow-y:auto;pointer-events:auto;scrollbar-width:thin;scrollbar-color:var(--mono-dim) transparent}
 .station-row{padding:9px 10px;border-bottom:1px solid rgba(255,255,255,.05);cursor:pointer;font-family:'Rajdhani',sans-serif;font-size:16px;letter-spacing:0px;text-transform:uppercase;color:var(--lcd);display:flex;justify-content:space-between;align-items:center;transition:all .1s;text-shadow:0 0 5px var(--lcd-dim)}
 .station-row:hover,.station-row.active{text-shadow:0 0 12px var(--lcd),0 0 24px var(--lcd-dim)}
+.station-row.highlight{background:rgba(255,255,255,.12);text-shadow:0 0 12px var(--lcd),0 0 24px var(--lcd-dim)}
 .st-br{font-size:8px;opacity:.45}
-.st-fav{background:transparent;border:none;color:var(--mono-dim);cursor:pointer;font-size:11px;padding:0 3px;font-family:'Rajdhani',sans-serif}
+.st-fav{background:transparent;border:none;color:var(--mono-dim);cursor:pointer;font-size:13px;padding:0 3px;font-family:'Rajdhani',sans-serif}
 .st-fav:hover{color:var(--lcd)}
+.st-fav.on{color:var(--lcd);text-shadow:0 0 8px var(--lcd-dim)}
 .st-msg{padding:20px 10px;text-align:center;font-family:'Rajdhani',sans-serif;font-size:14px;letter-spacing:1px;color:var(--mono-dim)}
 
 /* VIZ */
@@ -325,8 +327,8 @@ input[type=file]{display:none!important}
   <!-- ring: between presets (x=394) and station panel (x=901); center x=648, y=490; canvas 360x360; left=468, top=310 -->
   <canvas id="radioRing" class="ring" width="360" height="360" style="left:330px;top:300px;width:360px;height:360px"></canvas>
 
-  <img id="radioSelectBtn" class="layer" src="SAMA PARTS/SAMA-CONSOLE-AMBER-MODE-STATION-SELECT-BUTTON.png" style="pointer-events:auto;cursor:pointer" onclick="scanRadio()">
-  <img class="layer" src="SAMA PARTS/SAMA-CONSOLE-PALESTINE-MODE-STATION-FAVORITE-BUTTON.png" style="pointer-events:auto;cursor:pointer" onclick="saveCurrentPreset()">
+  <img id="radioSelectBtn" class="layer" src="SAMA PARTS/SAMA-CONSOLE-AMBER-MODE-STATION-SELECT-BUTTON.png" style="pointer-events:auto;cursor:pointer" onclick="selectHighlighted()">
+  <img class="layer" src="SAMA PARTS/SAMA-CONSOLE-PALESTINE-MODE-STATION-FAVORITE-BUTTON.png" style="pointer-events:auto;cursor:pointer" onclick="toggleFavHighlighted()">
   <img class="layer" src="SAMA PARTS/SAMA-CONSOLE-TEXT-STATIONS.png">
   <img class="layer" src="SAMA PARTS/SAMA-CONSOLE-RADIO-GENRE-SELECTOR-GLASS-PANEL.png">
   <img class="layer" src="SAMA PARTS/SAMA-CONSOLE-RADIO-STATION-MENU-GLASS-PANEL.png">
@@ -374,7 +376,7 @@ input[type=file]{display:none!important}
     <img id="radioBtnPause" class="tp-img" src="SAMA PARTS/CROPS/PAUSE.png" width="62" height="62" style="position:absolute;display:none">
   </div>
   <img onclick="stopAll()" class="tp-img" src="SAMA PARTS/CROPS/STOP.png" width="46" height="46"
-    style="position:absolute;left:493px;top:848px;cursor:pointer">
+    style="position:absolute;left:487.5px;top:848px;cursor:pointer">
 </div>
 
 <!-- VIZ — FULL SCREEN -->
@@ -664,10 +666,15 @@ function onSeek(e){if(!audioEl.duration||fileType==='midi')return;const r=docume
 
 // RADIO
 const RADIO_SERVERS=['https://de1.api.radio-browser.info','https://at1.api.radio-browser.info','https://nl1.api.radio-browser.info'];
-let radioPresets=JSON.parse(localStorage.getItem('sama_radio_presets')||'null')||Array(5).fill(null),stationCache=[];
+let radioPresets=JSON.parse(localStorage.getItem('sama_radio_presets')||'null')||Array(5).fill(null),stationCache=[],highlightedStation=null;
 async function scanRadio(){const name=document.getElementById('radioQ').value.trim(),tag=document.getElementById('radioTag').value;document.getElementById('stationScroll').innerHTML='<div class="st-msg">SCANNING...</div>';const p=new URLSearchParams({limit:80,hidebroken:true,order:'votes',reverse:true});if(name)p.set('name',name);if(tag)p.set('tag',tag);let st=[];for(const srv of RADIO_SERVERS){try{const r=await fetch(`${srv}/json/stations/search?${p}`,{headers:{'User-Agent':'SAMAPlayer/3.1'}});if(r.ok){st=await r.json();break;}}catch(e){}}if(!st.length){document.getElementById('stationScroll').innerHTML='<div class="st-msg">NO STATIONS FOUND</div>';return;}stationCache=st;renderStations(st);}
 async function scanRandom(){const tags=['jazz','electronic','trance','house','ambient','classical','synthwave','rock','metal','blues','hip-hop','pop','k-pop','anime','persian','lofi','country'];document.getElementById('radioTag').value=tags[Math.floor(Math.random()*tags.length)];scanRadio();}
-function renderStations(list){const el=document.getElementById('stationScroll');el.innerHTML='';list.slice(0,80).forEach((st,i)=>{const d=document.createElement('div');d.className='station-row'+(currentStation&&currentStation.stationuuid===st.stationuuid?' active':'');const nm=(st.name||'?').trim().slice(0,30).toUpperCase(),br=st.bitrate?st.bitrate+'k':'';d.innerHTML=`<span style="flex:1;overflow:hidden;text-overflow:ellipsis">${nm}</span><span class="st-br">${br}</span>`;const fav=document.createElement('button');fav.className='st-fav';fav.textContent='★';fav.onclick=e=>{e.stopPropagation();savePreset(stationCache[i]);};d.appendChild(fav);d.onclick=()=>playStation(stationCache[i]);el.appendChild(d);});}
+function renderStations(list){const el=document.getElementById('stationScroll');const sc=el.scrollTop;el.innerHTML='';list.slice(0,80).forEach((st,i)=>{const d=document.createElement('div');const isCur=currentStation&&currentStation.stationuuid===st.stationuuid;const isHi=highlightedStation&&highlightedStation.stationuuid===st.stationuuid;d.className='station-row'+(isCur?' active':'')+(isHi?' highlight':'');const nm=(st.name||'?').trim().slice(0,30).toUpperCase(),br=st.bitrate?st.bitrate+'k':'';d.innerHTML=`<span style="flex:1;overflow:hidden;text-overflow:ellipsis">${nm}</span><span class="st-br">${br}</span>`;const fav=document.createElement('button');const faved=isFav(st);fav.className='st-fav'+(faved?' on':'');fav.textContent=faved?'★':'☆';fav.title=faved?'Unfavorite':'Favorite';fav.onclick=e=>{e.stopPropagation();toggleFavorite(stationCache[i]);};d.appendChild(fav);d.onclick=()=>highlightStation(stationCache[i]);el.appendChild(d);});el.scrollTop=sc;}
+function isFav(st){return !!(st&&radioPresets.some(p=>p&&p.stationuuid===st.stationuuid));}
+function toggleFavorite(st){if(!st)return;const idx=radioPresets.findIndex(p=>p&&p.stationuuid===st.stationuuid);if(idx>-1){radioPresets[idx]=null;localStorage.setItem('sama_radio_presets',JSON.stringify(radioPresets));renderPresetsUI();}else{savePreset(st);}renderStations(stationCache);}
+function highlightStation(st){highlightedStation=st;renderStations(stationCache);}
+function selectHighlighted(){if(highlightedStation){playStation(highlightedStation);renderStations(stationCache);}}
+function toggleFavHighlighted(){const st=highlightedStation||currentStation;if(st)toggleFavorite(st);}
 function playStation(st){if(!st)return;stopAll(true);currentStation=st;fileType='audio';audioMode='radio';setCI(st.name,st.bitrate);ensureAudioCtx();resumeCtx();audioEl.src=st.url_resolved||st.url;audioEl.play().then(()=>setPlayState(true)).catch(()=>{if(st.url){audioEl.src=st.url;audioEl.play().then(()=>setPlayState(true)).catch(()=>{});}});checkWifi();updateHomeTransport();renderPresetsUI();}
 function clickPreset(i){const pp=radioPresets[i];if(pp){setMode('radio');playStation(pp);}}
 function renderPresetsUI(){for(let i=0;i<5;i++){const el=document.getElementById('rPreset'+i);if(!el)continue;const pp=radioPresets[i];el.classList.toggle('loaded',!!pp);el.classList.toggle('playing',!!(currentStation&&pp&&currentStation.stationuuid===pp.stationuuid));el.title=pp?(pp.name||''):'Empty — long-press to save';el.oncontextmenu=e=>{e.preventDefault();if(pp&&confirm(`Clear preset ${i+1}?`)){radioPresets[i]=null;localStorage.setItem('sama_radio_presets',JSON.stringify(radioPresets));renderPresetsUI();}};}}
