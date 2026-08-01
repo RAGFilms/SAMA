@@ -1,6 +1,6 @@
 {
   "name": "sama",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Spectral Audio Morphing Application",
   "author": "AGW Entertainment",
   "main": "main.js",
@@ -15,7 +15,19 @@
     "productName": "SAMA",
     "copyright": "© AGW Entertainment. All rights reserved.",
     "directories": { "output": "dist" },
-    "files": ["main.js", "**/*"],
+    "files": [
+      "main.js",
+      "**/*",
+      "!ui-preview.html",
+      "!anatol-mn-regular.zip",
+      "!SAMA PARTS/fonts/**",
+      "!SAMA PARTS/CROPS/*.psd",
+      "!**/*.map",
+      "!.*",
+      "!.*/**",
+      "!dist/**"
+    ],
+    "asar": true,
     "win": {
       "icon": "SAMA PARTS/icon-256.png",
       "target": "nsis"

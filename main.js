@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, session } = require('electron')
 const path = require('path')
 
 // Module-level win reference so the file-dialog handler (registered once) can use it
@@ -18,10 +18,10 @@ ipcMain.handle('open-file-dialog', async () => {
 
 function createWindow() {
   mainWin = new BrowserWindow({
-    width: 1228,
-    height: 952,
-    minWidth: 614,
-    minHeight: 476,
+    width: 1280,
+    height: 820,
+    minWidth: 360,
+    minHeight: 520,
     icon: path.join(__dirname, 'SAMA PARTS/icon-256.png'),
     title: 'SAMA',
     backgroundColor: '#00000000',
@@ -31,15 +31,30 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      sandbox: true,              // renderer runs in the OS sandbox
+      webSecurity: true,          // explicit — never disable, it turns off CORS/CSP
+      allowRunningInsecureContent: false,
       preload: path.join(__dirname, 'preload.js')
     }
   })
+
+  /* The renderer displays names from a public radio database and runs remote
+     CDN code. If anything ever injects a link or a redirect, these stop it
+     from turning into "the app window is now a website":
+       - will-navigate     : refuse to leave the local page
+       - windowOpenHandler : refuse popups outright
+       - permissions       : the app needs none, so deny them all */
+  mainWin.webContents.on('will-navigate', (e, url) => {
+    if (url !== mainWin.webContents.getURL()) e.preventDefault()
+  })
+  mainWin.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  mainWin.webContents.session.setPermissionRequestHandler((_wc, _perm, cb) => cb(false))
 
   const win = mainWin
 
   win.loadFile('index.html')
   win.setMenuBarVisibility(false)
-  win.setAspectRatio(1228 / 952)
+  // No aspect-ratio lock — the UI is a fluid grid and needs to reflow freely.
 
   ipcMain.on('win-minimize',   () => win.minimize())
   ipcMain.on('win-maximize',   () => win.isMaximized() ? win.unmaximize() : win.maximize())
@@ -47,67 +62,62 @@ function createWindow() {
 
   // VIZ mode — fullscreen
   ipcMain.on('win-enter-viz', () => {
-    win.setAspectRatio(0)          // release ratio lock for fullscreen
     win.setFullScreen(true)
   })
   ipcMain.on('win-exit-viz',  () => {
     win.setFullScreen(false)
-    win.setSize(1228, 952)
-    win.setAspectRatio(1228 / 952) // restore ratio lock
   })
 
   win.webContents.on('did-finish-load', () => {
+    // The topbar declares its own -webkit-app-region:drag (with no-drag on the
+    // controls), and the layout is a fluid grid — so the old injected drag strip,
+    // dots guard and transform-scaling are all gone. Only the VIZ fullscreen
+    // hook still needs to live here.
+    // NOTE the trailing `undefined;`. executeJavaScript sends the last
+    // expression's value back over IPC, and an assignment evaluates to the thing
+    // assigned — here a function, which cannot be structured-cloned. Without it
+    // this rejects with "An object could not be cloned".
     win.webContents.executeJavaScript(`
-      // Transparent background — removes black corner triangles
-      document.documentElement.style.background = 'transparent';
-      document.body.style.background = 'transparent';
-
-      // Wire dot buttons
-      function doMinimize() { window.electronAPI.minimize(); }
-      function doMaximize() { window.electronAPI.maximize(); }
-      function doClose()    { window.electronAPI.close();    }
-
-      // Hook setMode to trigger VIZ fullscreen — only fire exit when actually leaving viz
-      const _origSetMode = setMode;
-      let _inViz = false;
-      setMode = function(m) {
-        _origSetMode(m);
-        if (m === 'viz') {
-          _inViz = true;
-          window.electronAPI.enterViz();
-        } else if (_inViz) {
-          _inViz = false;
-          window.electronAPI.exitViz();
-        }
-      };
-
-      // Fix scaling — allow scale beyond 1x
-      window.removeEventListener('resize', scaleUI);
-      function scaleUI() {
-        const s = Math.min(window.innerWidth / 1228, window.innerHeight / 952);
-        sama.style.transform  = 'scale(' + s + ')';
-        sama.style.marginLeft = ((window.innerWidth  - 1228 * s) / 2) + 'px';
-        sama.style.marginTop  = ((window.innerHeight - 952  * s) / 2) + 'px';
-      }
-      window.addEventListener('resize', scaleUI);
-      scaleUI();
-
-      // Drag strip — full width across the top. Height is a % of the window so
-      // it scales with the UI and always stays above the style buttons.
-      const dragBar = document.createElement('div');
-      dragBar.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:7%;-webkit-app-region:drag;z-index:9999;pointer-events:none';
-      document.body.appendChild(dragBar);
-
-      // Carve the top-right corner OUT of the drag region (no-drag) so the
-      // green / amber / red window dots stay clickable. pointer-events:none lets
-      // the actual clicks pass through to the dot buttons beneath.
-      const dotsGuard = document.createElement('div');
-      dotsGuard.style.cssText = 'position:fixed;top:0;right:0;width:13%;height:8%;-webkit-app-region:no-drag;z-index:10000;pointer-events:none';
-      document.body.appendChild(dotsGuard);
-    `)
+      (function () {
+        var _origSetMode = setMode;
+        var _inViz = false;
+        setMode = function (m) {
+          _origSetMode(m);
+          if (m === 'viz') {
+            _inViz = true;
+            window.electronAPI.enterViz();
+          } else if (_inViz) {
+            _inViz = false;
+            window.electronAPI.exitViz();
+          }
+        };
+      })();
+      undefined;
+    `).catch(err => console.error('viz hook injection failed:', err))
   })
 }
 
-app.whenReady().then(createWindow)
+/* Clear any service worker before the window loads.
+   The app runs from file://, where a registered worker intercepts its own
+   navigation and cannot fetch the URL — the window comes up blank with
+   ERR_FAILED. Worse, the worker persists in the user-data profile, so it keeps
+   blocking index.html on every launch and the page can never repair itself.
+   Wiping it here is the only place that runs BEFORE the load.
+   Only 'serviceworkers' and 'cachestorage' are cleared — localStorage, which
+   holds themes, radio presets and saved custom streams, is untouched. */
+async function startUp() {
+  try {
+    // Only 'serviceworkers'. Including 'cachestorage' here made Chromium reset
+    // its quota database on every launch ("Could not open the quota database"),
+    // and it is pointless anyway — with no worker registered nothing reads
+    // those caches. localStorage (themes, presets, saved streams) is untouched.
+    await session.defaultSession.clearStorageData({ storages: ['serviceworkers'] })
+  } catch (err) {
+    console.error('Service worker cleanup failed:', err)
+  }
+  createWindow()
+}
+
+app.whenReady().then(startUp)
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })

@@ -1,2 +1,11 @@
 node_modules/
 dist/
+
+# local tooling / editor state — never published or packaged
+.*/
+!.gitignore
+
+# scratch assets kept locally, excluded from builds via package.json
+ui-preview.html
+anatol-mn-regular.zip
+SAMA PARTS/fonts/

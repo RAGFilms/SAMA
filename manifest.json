@@ -4,9 +4,9 @@
   "description": "Spectral Audio Morphing Application by AGW Entertainment",
   "start_url": "./index.html",
   "display": "standalone",
-  "orientation": "landscape",
-  "background_color": "#000000",
-  "theme_color": "#000000",
+  "orientation": "any",
+  "background_color": "#050506",
+  "theme_color": "#050506",
   "categories": [
     "music",
     "entertainment"
@@ -65,6 +65,6 @@
       "purpose": "any maskable"
     }
   ],
-  "version": "1.0.1",
+  "version": "1.0.2",
   "author": "AGW Entertainment"
 }
