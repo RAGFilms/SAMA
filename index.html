@@ -2,16 +2,16 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="SAMA">
 <meta name="application-name" content="SAMA">
-<meta name="theme-color" content="#000000">
+<meta name="theme-color" content="#050506">
 <meta name="description" content="Spectral Audio Morphing Application by AGW Entertainment">
 <title>SAMA — Spectral Audio Morphing Application</title>
-<meta name="version" content="1.0.1">
+<meta name="version" content="1.0.2">
 <meta name="author" content="AGW Entertainment">
 <meta name="copyright" content="© AGW Entertainment. All rights reserved.">
 <link rel="manifest" href="manifest.json">
@@ -21,470 +21,782 @@
 <link rel="apple-touch-icon" sizes="152x152" href="SAMA PARTS/icon-152.png">
 <link rel="apple-touch-icon" sizes="167x167" href="SAMA PARTS/icon-167.png">
 <link rel="apple-touch-icon" sizes="180x180" href="SAMA PARTS/icon-180.png">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&display=swap">
-<script src="https://cdn.jsdelivr.net/npm/midi-player-js@2.0.16/browser/midiplayer.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/soundfont-player@0.12.0/dist/soundfont-player.min.js"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&display=swap">
+<!-- Content-Security-Policy: the renderer executes remote CDN code and shows
+     names from a public radio database, so lock down what can run and where it
+     can talk. media-src/connect-src stay open because station streams and the
+     radio-browser API can be on any host. object/frame/base are denied so an
+     injected tag cannot load or navigate anywhere. -->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
+  script-src  'self' 'unsafe-inline' https://cdn.jsdelivr.net;
+  style-src   'self' 'unsafe-inline' https://fonts.googleapis.com;
+  font-src    'self' https://fonts.gstatic.com data:;
+  img-src     'self' data: blob: https:;
+  media-src   'self' blob: data: https: http:;
+  connect-src 'self' blob: data: https: http:;
+  worker-src  'self';
+  object-src  'none';
+  frame-src   'none';
+  base-uri    'none';
+  form-action 'none';">
+<!-- Subresource Integrity: pins the exact CDN payloads, so a compromised or
+     swapped file on jsdelivr is refused rather than executed. -->
+<script src="https://cdn.jsdelivr.net/npm/midi-player-js@2.0.16/browser/midiplayer.js"
+        integrity="sha384-sgTXoWynW+NF1BE9GwTWGlenD5sbdmZVptCMNAx/LFZ4g9q90L6KSg3GWqGgvgZH"
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdn.jsdelivr.net/npm/soundfont-player@0.12.0/dist/soundfont-player.min.js"
+        integrity="sha384-SNuzpwQ3s9bSYhEQUguCQqrGl1dWASFOhU8dqrz1HH3VOdO2ULZeFGrVovhw0FKm"
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <style>
-*{box-sizing:border-box;margin:0;padding:0}
-html,body{width:100%;height:100%;background:transparent;overflow:hidden;display:flex;align-items:flex-start;justify-content:flex-start}
-#sama{width:1228px;height:952px;position:relative;overflow:hidden;transform-origin:top left;flex-shrink:0;background:transparent}
-.layer{position:absolute;top:0;left:0;width:1228px;height:952px;pointer-events:none!important;user-select:none}
-.mode-panel{position:absolute;top:0;left:0;width:1228px;height:952px;pointer-events:none}
-/* Fix: all descendants get pointer-events, then layers override back to none */
-.mode-panel *{pointer-events:auto}
-.mode-panel .layer{pointer-events:none!important}
+/* ═══════════════════════════════════════════════════════════════
+   SAMA — fluid shell.  Replaces the fixed 1228x952 scaled canvas.
+   Every element id + onclick name the engine binds to is preserved.
+   ═══════════════════════════════════════════════════════════════ */
+
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+
+/* Variables live on :root, NOT on #sama. setMode('viz') reparents #vizPanel to
+   <body> to get real fullscreen — anything scoped to #sama stops resolving the
+   moment that happens, and every var() falls back to initial (black text on a
+   black overlay). :has() keeps them theme-aware from the root even though the
+   engine writes data-theme onto #sama deep in the tree. */
+:root{
+  /* --lcd is read by the engine (samaColor) — keep it a literal hex */
+  --lcd:#ff3b47;
+  --accent:var(--lcd);
+  --accent-glow:rgba(255,59,71,.55);
+  --lcd-dim:rgba(255,59,71,.4);
+  --live:#00c247;
+  --bg1:#009736; --bg2:#ee2a35;
+
+  --wht:#fff; --blk:#050506;
+  --txt:rgba(255,255,255,.94); --txt-2:rgba(255,255,255,.58); --txt-3:rgba(255,255,255,.32);
+  --mono:rgba(255,255,255,.75); --mono-dim:rgba(255,255,255,.28);
+  --glass:rgba(255,255,255,.038); --glass-2:rgba(255,255,255,.06);
+  --edge:rgba(255,255,255,.10); --edge-hi:rgba(255,255,255,.20);
+  --r-lg:20px; --r-md:14px; --r-sm:10px;
+  --rail:88px; --bar:104px; --top:60px; --tap:46px;
+}
+/* NOTE: internal key stays "electric" so the engine's THEMES map and the
+   WIFI-ON-ELECTRIC / ELECTRIC-MODE asset lookups keep resolving. Presented
+   to the user as Lavender. */
+/* Declared twice on purpose. The #sama selector applies synchronously to the
+   whole UI the instant the engine writes data-theme. The :root selector is fed
+   by a MutationObserver that mirrors the attribute onto <html>, and exists so
+   #vizPanel still themes correctly once it has been reparented out to <body>.
+   (An earlier :root:has(...) version worked but relied on :has invalidation
+   timing, which was observably stale for a frame — not worth the risk.) */
+:root[data-theme="palestine"],#sama[data-theme="palestine"]{--lcd:#ff3b47;--accent-glow:rgba(255,59,71,.55);--lcd-dim:rgba(255,59,71,.4);
+  --live:#00c247;--bg1:#009736;--bg2:#ee2a35}
+:root[data-theme="amber"],#sama[data-theme="amber"]{--lcd:#ffaa00;--accent-glow:rgba(255,170,0,.55);--lcd-dim:rgba(255,170,0,.4);
+  --live:#ff5560;--bg1:#ff9500;--bg2:#7a2e00}
+:root[data-theme="electric"],#sama[data-theme="electric"]{--lcd:#c4a9ff;--accent-glow:rgba(196,169,255,.5);--lcd-dim:rgba(196,169,255,.4);
+  --live:#ff7a85;--bg1:#a78bfa;--bg2:#4a2a6b}
+:root[data-theme="emerald"],#sama[data-theme="emerald"]{--lcd:#00ff66;--accent-glow:rgba(0,255,102,.55);--lcd-dim:rgba(0,255,102,.4);
+  --live:#ff5560;--bg1:#00ff66;--bg2:#00614a}
+
+html,body{height:100%;overflow:hidden}
+body{font-family:'Rajdhani',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+#sama{position:fixed;inset:0;background:var(--blk);color:var(--txt);overflow:hidden;
+  border-radius:0!important}          /* engine sets 35px in radio mode — override */
 .hidden{display:none!important}
-canvas.ring{position:absolute;pointer-events:none!important;display:block}
-
-/* NAV BUTTONS */
-.nav-btn{position:absolute;left:2px;width:156px;cursor:pointer;border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;border:1px solid rgba(255,255,255,.1);background:rgba(8,8,8,.92);transition:all .18s;overflow:hidden;user-select:none;pointer-events:auto}
-.nav-btn::before{content:'';position:absolute;top:0;left:0;right:0;height:48%;background:rgba(255,255,255,.04);border-radius:5px 5px 0 0;pointer-events:none}
-.nav-btn:not(.active):hover{background:rgba(255,255,255,.07);border-color:var(--mono-dim)}
-.nav-btn.active{border-color:var(--lcd);box-shadow:0 0 18px var(--lcd-dim),0 0 6px var(--lcd-dim) inset}
-[data-theme="amber"]    .nav-btn.active{background:linear-gradient(160deg,#ff8800 0%,#3a1800 100%)}
-[data-theme="electric"] .nav-btn.active{background:linear-gradient(160deg,#00aaff 0%,#001a33 100%)}
-[data-theme="emerald"]  .nav-btn.active{background:linear-gradient(160deg,#00dd55 0%,#001a0a 100%)}
-/* PALESTINE: fixed colors always, active adds bloom */
-[data-theme="palestine"] #navHome {background:linear-gradient(160deg,#cc0000 0%,#3a0000 100%)!important;border-color:#aa0000}
-[data-theme="palestine"] #navHome .nav-label{color:#ffaaaa}
-[data-theme="palestine"] #navHome.active{box-shadow:0 0 28px rgba(255,0,0,.7),0 0 14px rgba(255,0,0,.4) inset;border-color:#ff3300}
-
-[data-theme="palestine"] #navLocal {background:linear-gradient(160deg,#1a1a1a 0%,#000 100%)!important;border-color:#444}
-[data-theme="palestine"] #navLocal .nav-label{color:#aaaaaa}
-[data-theme="palestine"] #navLocal.active{box-shadow:0 0 22px rgba(200,200,200,.4),0 0 8px rgba(200,200,200,.2) inset;border-color:#888}
-
-[data-theme="palestine"] #navRadio {background:linear-gradient(160deg,#e0e0e0 0%,#999 100%)!important;border-color:#ccc}
-[data-theme="palestine"] #navRadio .nav-label{color:#111!important;text-shadow:none!important}
-[data-theme="palestine"] #navRadio.active{box-shadow:0 0 28px rgba(255,255,255,.6),0 0 14px rgba(255,255,255,.3) inset;border-color:#fff}
-
-[data-theme="palestine"] #navViz  {background:linear-gradient(160deg,#009736 0%,#001f0c 100%)!important;border-color:#006622}
-[data-theme="palestine"] #navViz  .nav-label{color:#aaffcc}
-[data-theme="palestine"] #navViz.active{box-shadow:0 0 28px rgba(0,200,80,.7),0 0 14px rgba(0,200,80,.4) inset;border-color:#00dd55}
-.nav-icon{font-size:28px;line-height:1;pointer-events:none;font-family:'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji','Segoe UI Symbol',sans-serif}
-.nav-label{font-family:'Rajdhani',sans-serif;font-size:13px;letter-spacing:2px;text-transform:uppercase;color:var(--lcd);text-shadow:0 0 8px var(--lcd-dim);pointer-events:none}
-.nav-btn.active .nav-label{color:rgba(0,0,0,.9);text-shadow:none}
-
-/* STYLE BUTTONS */
-
-/* WIFI */
-#wifiWrap{position:absolute;left:1036px;top:24px;width:39px;height:32px;z-index:60}
-#wifiWrap img{position:absolute;top:0;left:0;width:39px;height:32px}
-@keyframes wifiPulse{0%,100%{filter:drop-shadow(0 0 5px var(--lcd))}50%{filter:drop-shadow(0 0 14px var(--lcd)) drop-shadow(0 0 28px var(--lcd-dim))}}
-#wifiOn{animation:wifiPulse 2.4s ease-in-out infinite}
-
-/* DOTS */
-.dot-btn{position:absolute;top:24px;z-index:60;cursor:pointer;pointer-events:auto}
-.style-btn-png{position:absolute;top:73px;cursor:pointer;z-index:61;pointer-events:auto;transition:opacity .18s,filter .18s}
-#dotGreen{left:1118px;width:23px;height:24px}
-#dotAmber{left:1147px;width:24px;height:24px}
-#dotRed  {left:1177px;width:24px;height:24px}
-
-/* TRANSPORT */
-.tp-css-btn{width:44px;height:44px;cursor:pointer;background:transparent;border:none;color:var(--lcd);display:flex;align-items:center;justify-content:center;transition:all .18s;pointer-events:auto;position:relative;filter:drop-shadow(0 0 5px var(--lcd-dim));opacity:.72}
-.tp-css-btn:hover{filter:drop-shadow(0 0 10px var(--lcd)) drop-shadow(0 0 20px var(--lcd-dim));opacity:1;transform:scale(1.1)}
-.tp-css-btn svg{pointer-events:none;display:block}
-.tp-prev::before,.tp-prev::after,.tp-next::before,.tp-next::after{content:none}
-.tp-img{cursor:pointer;pointer-events:auto;display:block}
-[data-theme="amber"]    .tp-img{filter:drop-shadow(0 0 7px #ff880099)}
-[data-theme="electric"] .tp-img{filter:drop-shadow(0 0 7px #00d4ff99)}
-[data-theme="emerald"]  .tp-img{filter:drop-shadow(0 0 7px #00ff6699)}
-[data-theme="palestine"].tp-img{filter:drop-shadow(0 0 7px #cc000099)}
-
-/* SEEK */
-#seekWrap{position:absolute;left:547px;top:768px;width:300px;height:20px;cursor:pointer;pointer-events:auto}
-#seekTrack{position:absolute;top:8px;left:0;right:0;height:3px;background:rgba(255,255,255,.1)}
-#seekFill {position:absolute;top:0;left:0;height:3px;width:0%;background:var(--lcd);box-shadow:0 0 8px var(--lcd);transition:width .2s linear}
-#seekThumb{position:absolute;top:-5px;width:14px;height:14px;border-radius:50%;background:var(--lcd);box-shadow:0 0 10px var(--lcd);transform:translateX(-7px);pointer-events:none}
-
-/* TEXT — using exact original SAMA fonts */
-.lcd{font-family:'Rajdhani',sans-serif;color:var(--lcd);text-shadow:0 0 12px var(--lcd);white-space:nowrap;overflow:hidden}
-.mono{font-family:'Rajdhani',sans-serif;text-transform:uppercase;letter-spacing:2px;color:var(--mono-dim);white-space:nowrap;overflow:hidden}
-
-/* HOME */
-#homeWelcome{position:absolute;left:182px;top:156px;width:420px;pointer-events:none}
-.hw-line{font-family:'Rajdhani',sans-serif;text-transform:uppercase;letter-spacing:2px;color:var(--lcd);line-height:2.0;font-size:21px;font-weight:700;text-shadow:0 0 18px var(--lcd-dim)}
-#homeNowPlaying{position:absolute;top:148px;right:41px;width:316px;text-align:right;pointer-events:none}
-#hnpTime  {font-size:40px;font-weight:700;line-height:1}
-#hnpSource{font-family:'Rajdhani',sans-serif;font-size:12px;letter-spacing:2px;color:var(--mono-dim);margin-top:6px}
-#hnpArtist{font-size:17px;font-weight:600;margin-top:4px;opacity:.9}
-#hnpTitle {font-size:25px;font-weight:700;margin-top:4px}
-#hnpAlbum {font-family:'Rajdhani',sans-serif;font-size:9px;letter-spacing:2px;color:var(--mono-dim);margin-top:5px}
-#homeTransportWrap{position:absolute;left:165px;right:0;bottom:58px;display:flex;justify-content:center;align-items:center;gap:0;pointer-events:auto;flex-direction:column}
-
-/* LOCAL */
-#localFileBar{position:absolute;top:0;left:0;width:0;height:0;pointer-events:none}
-/* file buttons sit directly in panel slots */
-.file-btn{position:absolute;cursor:pointer;background:transparent;border:none;color:var(--mono-dim);font-family:'Rajdhani',sans-serif;font-size:16px;letter-spacing:1px;text-transform:uppercase;transition:all .15s;display:flex;align-items:center;justify-content:center;text-align:center;padding:0;z-index:10;pointer-events:auto!important}
-.file-btn:hover{color:var(--lcd);text-shadow:0 0 8px var(--lcd-dim)}
+/* engine writes to these but the new shell doesn't render them */
+#basePanel,#wifiOn,#wifiOff,#radioSelectBtn,#sbAmber,#sbElectric,#sbEmerald,#sbPal,
+#homeTransportWrap,#hnpTime,#hnpSource,#hnpArtist,#hnpTitle,#hnpAlbum,
+#rnpTime,#rnpSource{display:none!important}
 input[type=file]{display:none!important}
-#localNowPlaying{position:absolute;right:20px;top:140px;width:370px;text-align:right;pointer-events:none}
-#lnpTime  {font-size:38px;font-weight:700;line-height:1}
-#lnpSource{font-family:'Rajdhani',sans-serif;font-size:12px;letter-spacing:2px;color:var(--mono-dim);margin-top:5px}
-#lnpArtist{font-size:15px;font-weight:600;margin-top:3px;opacity:.9}
-#lnpTitle {font-size:22px;font-weight:700;margin-top:3px}
-#lnpAlbum {font-family:'Rajdhani',sans-serif;font-size:9px;letter-spacing:2px;color:var(--mono-dim);margin-top:4px}
-#localPlaylist{flex:1;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--mono-dim) transparent;pointer-events:auto;user-select:none;min-height:0}
-.pl-row{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.04);cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-family:'Rajdhani',sans-serif;font-size:15px;letter-spacing:0px;text-transform:uppercase;color:var(--mono-dim);transition:all .1s}
-.pl-row:hover,.pl-row.active{color:var(--lcd);text-shadow:0 0 6px var(--lcd-dim)}
-.pl-rm{background:transparent;border:none;color:var(--mono-dim);cursor:pointer;font-size:12px;padding:0 4px;font-family:'Rajdhani',sans-serif}
-.pl-rm:hover{color:var(--lcd)}
-.local-panel{position:absolute;background:rgba(0,0,0,.65);border:1px solid rgba(255,255,255,.12);border-radius:8px;display:flex;flex-direction:column;overflow:hidden;pointer-events:auto}
-.local-panel-hdr{font-family:'Rajdhani',sans-serif;font-size:9px;letter-spacing:3px;text-transform:uppercase;color:var(--mono-dim);padding:8px 12px 6px;border-bottom:1px solid rgba(255,255,255,.08);flex-shrink:0;display:flex;justify-content:space-between;align-items:center}
-#localTracksPanel{left:182px;top:345px;width:300px;height:400px}
-#localSavedPanel{right:50px;top:345px;width:235px;height:345px}
-#savedPlaylistList{flex:1;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--mono-dim) transparent;user-select:none;min-height:0}
-.sp-row{padding:7px 12px;border-bottom:1px solid rgba(255,255,255,.04);cursor:pointer;font-family:'Rajdhani',sans-serif;font-size:14px;letter-spacing:0px;text-transform:uppercase;color:var(--mono-dim);transition:all .1s;display:flex;justify-content:space-between;align-items:center}
-.sp-row:hover{color:var(--lcd);text-shadow:0 0 6px var(--lcd-dim)}
-#albumArt{position:absolute;right:50px;top:705px;width:185px;height:185px;border:1px solid var(--mono-dim);display:flex;align-items:center;justify-content:center;font-family:'Rajdhani',sans-serif;font-size:7px;letter-spacing:2px;text-transform:uppercase;color:var(--mono-dim);overflow:hidden;pointer-events:none}
-#albumArt img{width:100%;height:100%;object-fit:cover;display:none}
 
-/* RADIO */
-#radioNowPlaying{position:absolute;right:41px;top:148px;width:282px;text-align:right;pointer-events:none}
-#rnpTime   {font-size:38px;font-weight:700;line-height:1}
-#rnpSource {font-family:'Rajdhani',sans-serif;font-size:10px;letter-spacing:3px;color:var(--mono-dim);margin-top:5px}
-#rnpChannel{font-size:18px;font-weight:700;margin-top:3px;opacity:.95}
-#rnpBitrate{font-family:'Rajdhani',sans-serif;font-size:8px;letter-spacing:2px;color:var(--mono-dim);margin-top:4px}
-/* Radio presets: PNG buttons from user's designs */
-.radio-preset-png{position:absolute;top:148px;height:67px;width:134px;cursor:pointer;pointer-events:auto;
-  transition:filter .18s;opacity:.65}
-.radio-preset-png.loaded{opacity:.9;filter:drop-shadow(0 0 6px var(--lcd))}
-.radio-preset-png.playing{opacity:1;filter:drop-shadow(0 0 12px var(--lcd)) drop-shadow(0 0 24px var(--lcd-dim))}
-.radio-preset-png:hover{opacity:.85}
-.radio-hotspot{position:absolute;pointer-events:auto;cursor:pointer;background:transparent;z-index:20}
-#genreControls{position:absolute;left:910px;top:335px;width:265px;pointer-events:auto}
-.glass-label{font-family:'Rajdhani',sans-serif;font-size:13px;letter-spacing:1px;text-transform:uppercase;color:var(--mono-dim);margin-bottom:5px;text-align:center}
-.glass-select,.glass-input{width:100%;padding:6px 8px;background:rgba(0,0,0,.85);border:1px solid var(--mono-dim);color:var(--lcd);font-family:'Rajdhani',sans-serif;font-size:14px;letter-spacing:0px;text-transform:uppercase;outline:none;cursor:pointer;margin-bottom:7px;transition:border-color .15s}
-.glass-select:focus,.glass-input:focus{border-color:var(--lcd)}
-.glass-select option{background:#050505;color:var(--lcd)}
-.scan-btn,.rand-btn{width:100%;padding:7px;font-family:'Rajdhani',sans-serif;font-size:13px;letter-spacing:1px;text-transform:uppercase;cursor:pointer;transition:all .15s;margin-bottom:7px}
-.scan-btn{background:var(--lcd);color:#000;border:none}
-.scan-btn:hover{opacity:.85}
-.rand-btn{background:transparent;border:1px solid var(--mono-dim);color:var(--mono-dim)}
-.rand-btn:hover{border-color:var(--lcd);color:var(--lcd)}
-#stationScroll{position:absolute;left:910px;top:543px;width:265px;height:330px;overflow-y:auto;pointer-events:auto;scrollbar-width:thin;scrollbar-color:var(--mono-dim) transparent}
-.station-row{padding:9px 10px;border-bottom:1px solid rgba(255,255,255,.05);cursor:pointer;font-family:'Rajdhani',sans-serif;font-size:16px;letter-spacing:0px;text-transform:uppercase;color:var(--lcd);display:flex;justify-content:space-between;align-items:center;transition:all .1s;text-shadow:0 0 5px var(--lcd-dim)}
-.station-row:hover,.station-row.active{text-shadow:0 0 12px var(--lcd),0 0 24px var(--lcd-dim)}
-.station-row.highlight{background:rgba(255,255,255,.12);text-shadow:0 0 12px var(--lcd),0 0 24px var(--lcd-dim)}
-.st-br{font-size:8px;opacity:.45}
-.st-fav{background:transparent;border:none;color:var(--mono-dim);cursor:pointer;font-size:13px;padding:0 3px;font-family:'Rajdhani',sans-serif}
-.st-fav:hover{color:var(--lcd)}
-.st-fav.on{color:var(--lcd);text-shadow:0 0 8px var(--lcd-dim)}
-.st-msg{padding:20px 10px;text-align:center;font-family:'Rajdhani',sans-serif;font-size:14px;letter-spacing:1px;color:var(--mono-dim)}
+/* ── BACKDROP ───────────────────────────────────────────────── */
+#bg{position:absolute;inset:0;z-index:0;overflow:hidden;pointer-events:none}
+#bg::before,#bg::after{content:'';position:absolute;border-radius:50%;filter:blur(120px);opacity:.5}
+#bg::before{width:60vmax;height:60vmax;left:-18vmax;top:-22vmax;
+  background:radial-gradient(circle,var(--bg1) 0%,transparent 68%);animation:drift1 26s ease-in-out infinite}
+#bg::after{width:52vmax;height:52vmax;right:-16vmax;bottom:-20vmax;
+  background:radial-gradient(circle,var(--bg2) 0%,transparent 68%);animation:drift2 32s ease-in-out infinite}
+@keyframes drift1{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(9vmax,7vmax) scale(1.16)}}
+@keyframes drift2{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-8vmax,-6vmax) scale(1.2)}}
+#grain{position:absolute;inset:0;z-index:1;pointer-events:none;opacity:.16;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E")}
 
-/* VIZ */
-#vizCanvas{position:absolute;top:0;left:0;width:1228px;height:952px;pointer-events:none}
-#vizOverlay{position:absolute;bottom:0;left:0;right:0;padding:14px 20px 18px;background:linear-gradient(transparent,rgba(0,0,0,.92) 40%);transition:opacity .6s ease;z-index:10;pointer-events:auto}
+/* ── GRID ───────────────────────────────────────────────────── */
+#app{position:relative;z-index:2;height:100%;display:grid;
+  grid-template-columns:var(--rail) 1fr;
+  grid-template-rows:var(--top) 1fr var(--bar);
+  grid-template-areas:"top top" "rail main" "bar bar"}
+#chrome{display:contents}              /* engine hides the whole chrome in viz */
+
+/* ── TOPBAR ─────────────────────────────────────────────────── */
+#topbar{grid-area:top;display:flex;align-items:center;gap:14px;padding:0 clamp(12px,2vw,22px);
+  border-bottom:1px solid var(--edge);background:rgba(0,0,0,.32);backdrop-filter:blur(22px);
+  -webkit-app-region:drag}
+#topbar button,#topbar .nodrag{-webkit-app-region:no-drag}
+.brand{display:flex;align-items:center;gap:12px;margin-right:auto}
+.flag{width:30px;height:15px;display:block;border-radius:2px;flex-shrink:0;
+  box-shadow:0 0 0 1px rgba(255,255,255,.18),0 2px 8px rgba(0,0,0,.5)}
+/* wordmark art used as a luminance mask: white letterforms become the shape,
+   black canvas drops out. Source 1000x356, art at x90-914 / y63-257. */
+/* The earlier crop fitted the artwork's bounding box exactly, so the letterforms
+   sat flush against all four edges and sub-pixel rounding shaved the tops off.
+   Sized to 90% of the box instead, leaving a 5% margin all round, and the
+   position solved so the art's true centre (0.502, 0.449 of the source — it is
+   NOT vertically centred in the file) lands on the box centre. */
+.mark{width:100px;height:24px;background:var(--wht);flex-shrink:0;
+  mask-image:url('SAMA%20PARTS/sama-logo.png');mask-repeat:no-repeat;
+  mask-size:109.1% 164.2%;mask-position:52.4% 37.1%;mask-mode:luminance;
+  -webkit-mask-image:url('SAMA%20PARTS/sama-logo.png');-webkit-mask-repeat:no-repeat;
+  -webkit-mask-size:109.1% 164.2%;-webkit-mask-position:52.4% 37.1%;
+  filter:drop-shadow(0 0 9px var(--accent-glow))}
+
+.themes{display:flex;gap:6px}
+.tpill{width:26px;height:26px;border-radius:50%;border:1.5px solid var(--edge);background:var(--c);
+  cursor:pointer;transition:.2s;padding:0;opacity:.55}
+.tpill:hover{transform:scale(1.14);opacity:.85}
+#sama[data-theme="palestine"] .tpill[data-t="palestine"],
+#sama[data-theme="amber"]     .tpill[data-t="amber"],
+#sama[data-theme="electric"]  .tpill[data-t="electric"],
+#sama[data-theme="emerald"]   .tpill[data-t="emerald"]{
+  opacity:1;border-color:var(--wht);box-shadow:0 0 0 3px rgba(255,255,255,.12),0 0 16px var(--c)}
+
+/* online pill — driven purely by the engine toggling #wifiOn's inline display */
+#netPill{display:flex;align-items:center;gap:7px;padding:6px 12px;border-radius:99px;
+  background:var(--glass);border:1px solid var(--edge);font-size:11px;letter-spacing:2.2px;
+  color:var(--txt-2);text-transform:uppercase}
+#netPill i{width:7px;height:7px;border-radius:50%;background:var(--live);box-shadow:0 0 9px var(--live);
+  animation:blip 2.4s ease-in-out infinite;font-style:normal}
+#netPill s::after{content:'ONLINE';text-decoration:none}
+#netPill s{text-decoration:none}
+#sama:has(#wifiOn[style*="display: none"]) #netPill i{background:var(--txt-3);box-shadow:none;animation:none}
+#sama:has(#wifiOn[style*="display: none"]) #netPill s::after{content:'OFFLINE'}
+@keyframes blip{0%,100%{opacity:1}50%{opacity:.35}}
+
+.dots{display:flex;gap:9px;margin-left:4px}
+.dots button{width:13px;height:13px;border-radius:50%;border:none;cursor:pointer;opacity:.55;
+  transition:.18s;padding:0}
+.dots button:hover{opacity:1;transform:scale(1.22)}
+.d-min{background:#ffb02e}.d-max{background:#2ac940}.d-cls{background:#ff5f57}
+
+/* ── NAV (rail on desktop → tab bar on phone, same DOM) ─────── */
+#rail{grid-area:rail;display:flex;flex-direction:column;align-items:center;gap:10px;padding:16px 0;
+  border-right:1px solid var(--edge);background:rgba(0,0,0,.24);backdrop-filter:blur(22px)}
+.nav{position:relative;width:62px;height:62px;border-radius:var(--r-md);display:flex;
+  flex-direction:column;align-items:center;justify-content:center;gap:5px;background:transparent;
+  border:1px solid transparent;color:var(--txt-3);cursor:pointer;transition:.2s;padding:0;
+  font-family:inherit}
+.nav svg{width:23px;height:23px;stroke:currentColor;fill:none;stroke-width:1.7;
+  stroke-linecap:round;stroke-linejoin:round}
+.nav em{font-size:9px;letter-spacing:1.6px;font-style:normal;text-transform:uppercase}
+.nav:hover{color:var(--txt);background:var(--glass);border-color:var(--edge)}
+.nav.active{color:var(--accent);background:var(--glass-2);border-color:var(--accent);
+  box-shadow:0 0 22px -4px var(--accent-glow),inset 0 0 22px -14px var(--accent-glow)}
+.nav.active::before{content:'';position:absolute;left:-16px;top:50%;transform:translateY(-50%);
+  width:3px;height:26px;border-radius:0 3px 3px 0;background:var(--accent);box-shadow:0 0 12px var(--accent)}
+
+/* Palestine keeps the original flag scheme on the nav, always coloured */
+#sama[data-theme="palestine"] #navHome {background:linear-gradient(160deg,#cc0000 0%,#3a0000 100%);border-color:#aa0000;color:#ffaaaa}
+#sama[data-theme="palestine"] #navLocal{background:linear-gradient(160deg,#1a1a1a 0%,#000 100%);border-color:#444;color:#aaa}
+#sama[data-theme="palestine"] #navRadio{background:linear-gradient(160deg,#e0e0e0 0%,#999 100%);border-color:#ccc;color:#111}
+#sama[data-theme="palestine"] #navViz  {background:linear-gradient(160deg,#009736 0%,#001f0c 100%);border-color:#006622;color:#aaffcc}
+#sama[data-theme="palestine"] .nav.active{box-shadow:none}
+#sama[data-theme="palestine"] #navHome.active {box-shadow:0 0 28px rgba(255,0,0,.7),inset 0 0 14px rgba(255,0,0,.4);border-color:#ff3300}
+#sama[data-theme="palestine"] #navLocal.active{box-shadow:0 0 22px rgba(200,200,200,.4),inset 0 0 8px rgba(200,200,200,.2);border-color:#888}
+#sama[data-theme="palestine"] #navRadio.active{box-shadow:0 0 28px rgba(255,255,255,.6),inset 0 0 14px rgba(255,255,255,.3);border-color:#fff}
+#sama[data-theme="palestine"] #navViz.active  {box-shadow:0 0 28px rgba(0,200,80,.7),inset 0 0 14px rgba(0,200,80,.4);border-color:#00dd55}
+#sama[data-theme="palestine"] #navHome.active::before {background:#ff3300;box-shadow:0 0 12px #ff3300}
+#sama[data-theme="palestine"] #navLocal.active::before{background:#ccc;box-shadow:0 0 12px #ccc}
+#sama[data-theme="palestine"] #navRadio.active::before{background:#fff;box-shadow:0 0 12px #fff}
+#sama[data-theme="palestine"] #navViz.active::before  {background:#00dd55;box-shadow:0 0 12px #00dd55}
+
+/* ── MAIN ───────────────────────────────────────────────────── */
+#main{grid-area:main;position:relative;overflow-y:auto;overscroll-behavior:contain;
+  padding:clamp(14px,2.2vw,26px);scrollbar-width:thin;scrollbar-color:var(--edge-hi) transparent}
+#main::-webkit-scrollbar{width:8px}
+#main::-webkit-scrollbar-thumb{background:var(--edge-hi);border-radius:9px}
+.mode-panel{animation:in .3s ease}
+@keyframes in{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
+.glass{background:var(--glass);border:1px solid var(--edge);border-radius:var(--r-lg);backdrop-filter:blur(18px)}
+.h{font-size:10px;letter-spacing:3.4px;text-transform:uppercase;color:var(--txt-3);display:flex;
+  justify-content:space-between;align-items:center;margin-bottom:12px}
+.h b{color:var(--accent);font-weight:600;font-size:12px}
+.lcd{color:var(--accent)}
+.mono{color:var(--txt-3)}
+
+/* ── HOME ───────────────────────────────────────────────────── */
+/* Ring column carries more weight than the copy, which pulls the form toward
+   the centre of the area rather than parking it on the right edge. */
+.hero{display:grid;grid-template-columns:.82fr minmax(320px,1.18fr);
+  gap:clamp(16px,2.4vw,32px);align-items:center;min-height:min(58vh,440px)}
+.hero-l h1{font-size:clamp(30px,4.4vw,58px);font-weight:700;line-height:1.04;letter-spacing:-.5px}
+.hero-l h1 u{text-decoration:none;background:linear-gradient(96deg,var(--accent),var(--bg1));
+  -webkit-background-clip:text;background-clip:text;color:transparent}
+.hero-l p{margin-top:14px;font-size:clamp(14px,1.35vw,17px);color:var(--txt-2);line-height:1.75;
+  max-width:44ch;letter-spacing:.3px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}
+.chip{padding:7px 14px;border-radius:99px;background:var(--glass);border:1px solid var(--edge);
+  font-size:11px;letter-spacing:2.4px;color:var(--txt-2);text-transform:uppercase}
+.cta{display:flex;flex-wrap:wrap;gap:11px;margin-top:26px}
+.btn{min-height:var(--tap);padding:0 24px;border-radius:99px;border:1px solid var(--edge);
+  background:var(--glass);color:var(--txt);font-family:inherit;font-size:12px;font-weight:600;
+  letter-spacing:2.6px;text-transform:uppercase;cursor:pointer;transition:.2s;
+  display:inline-flex;align-items:center;justify-content:center;gap:9px}
+.btn:hover{background:var(--glass-2);border-color:var(--edge-hi);transform:translateY(-1px)}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:#0d0204;
+  box-shadow:0 8px 30px -8px var(--accent-glow)}
+.btn.pri:hover{filter:brightness(1.12)}
+.btn svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2}
+/* Scales with the viewport instead of stopping at a fixed cap, so the ring
+   keeps filling its column on large / fullscreen displays. vw term stops it
+   crowding the copy on very wide-but-short windows. */
+.stage{position:relative;display:grid;place-items:center;aspect-ratio:1;
+  max-width:min(70vh,44vw,880px);margin-inline:auto;width:100%}
+canvas.ring{width:100%;height:100%;display:block;pointer-events:none}
+.stage::after{content:'';position:absolute;inset:14%;border-radius:50%;
+  background:radial-gradient(circle,var(--accent-glow) 0%,transparent 66%);opacity:.2;
+  filter:blur(28px);pointer-events:none}
+
+/* ── LOCAL ──────────────────────────────────────────────────── */
+.actions{display:grid;gap:11px;margin-bottom:20px;grid-template-columns:repeat(auto-fit,minmax(168px,1fr))}
+.file-btn{min-height:82px;border-radius:var(--r-md);border:1px solid var(--edge);background:var(--glass);
+  color:var(--txt-2);cursor:pointer;transition:.2s;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:8px;font-family:inherit;font-size:11px;letter-spacing:2.4px;
+  text-transform:uppercase;padding:12px}
+.file-btn svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.6;
+  stroke-linecap:round;stroke-linejoin:round}
+.file-btn:hover{color:var(--accent);border-color:var(--accent);background:var(--glass-2);
+  transform:translateY(-2px);box-shadow:0 10px 28px -12px var(--accent-glow)}
+.cols{display:grid;gap:16px;grid-template-columns:1.6fr 1fr;align-items:start}
+.local-panel{padding:16px;max-height:min(46vh,400px);display:flex;flex-direction:column}
+.local-panel-hdr{font-size:10px;letter-spacing:3.4px;text-transform:uppercase;color:var(--txt-3);
+  display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-shrink:0}
+#localPlaylist,#savedPlaylistList{flex:1;overflow-y:auto;margin:0 -6px;padding:0 6px;
+  scrollbar-width:thin;scrollbar-color:var(--edge-hi) transparent;min-height:0}
+.pl-row,.sp-row{min-height:var(--tap);padding:9px 12px;border-radius:var(--r-sm);cursor:pointer;
+  display:flex;align-items:center;justify-content:space-between;gap:11px;color:var(--txt-2);
+  font-size:15px;letter-spacing:.4px;transition:.15s;border:1px solid transparent}
+.pl-row:hover,.sp-row:hover{background:var(--glass);color:var(--txt)}
+.pl-row.active{background:var(--glass-2);color:var(--accent);border-color:var(--edge)}
+.pl-rm{background:transparent;border:none;color:var(--txt-3);cursor:pointer;font-size:13px;
+  padding:0 4px;font-family:inherit;flex-shrink:0}
+.pl-rm:hover{color:var(--accent)}
+#albumArt{aspect-ratio:1;border-radius:var(--r-md);border:1px solid var(--edge);background:var(--glass);
+  display:grid;place-items:center;color:var(--txt-3);font-size:10px;letter-spacing:3px;
+  text-transform:uppercase;overflow:hidden;margin-bottom:14px;position:relative}
+#albumArt img{width:100%;height:100%;object-fit:cover;display:none;position:absolute;inset:0}
+
+/* LOCAL fits one screen — no page scroll. Rows: actions (auto) + body (1fr),
+   and the two lists scroll internally instead of the page growing. Needs
+   min-height:0 at every level or grid children refuse to shrink below content. */
+.local-layout{height:100%;display:grid;grid-template-rows:auto 1fr;
+  gap:clamp(10px,1.4vw,16px);min-height:0}
+.local-layout .actions{margin-bottom:0}
+.local-layout .file-btn{min-height:58px;gap:6px;font-size:10px;letter-spacing:2px}
+.local-layout .file-btn svg{width:18px;height:18px}
+.local-body{display:grid;grid-template-columns:1.05fr 1.3fr 0.85fr;
+  gap:clamp(10px,1.4vw,16px);min-height:0}
+.local-body .local-panel{max-height:none;height:100%;min-height:0}
+.local-side{display:grid;grid-template-rows:auto 1fr;gap:clamp(10px,1.2vw,14px);min-height:0}
+.local-side #albumArt{margin-bottom:0;width:100%;max-width:min(20vh,170px);justify-self:center}
+.local-stage{align-self:center;max-width:min(48vh,100%)}
+@media (max-width:1000px){
+  /* below this the columns are too narrow to be useful — stack and let it scroll */
+  .local-layout{height:auto;grid-template-rows:auto auto}
+  .local-body{grid-template-columns:1fr}
+  .local-body .local-panel{height:auto;max-height:min(38vh,300px)}
+  .local-stage{order:-1;max-width:min(30vh,240px)}
+  .local-side #albumArt{max-width:180px}
+}
+
+/* ── RADIO ──────────────────────────────────────────────────── */
+.presets{display:grid;gap:9px;margin-bottom:18px;grid-template-columns:repeat(5,1fr)}
+.pre{min-height:62px;border-radius:var(--r-md);border:1px solid var(--edge);background:var(--glass);
+  cursor:pointer;transition:.2s;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:3px;font-family:inherit;color:var(--txt-3);padding:8px;overflow:hidden}
+.pre b{font-size:17px;font-weight:700;letter-spacing:1px}
+/* label comes from the title attr the engine already sets — no extra JS */
+.pre::after{content:'EMPTY';font-size:9px;letter-spacing:1.8px;text-transform:uppercase;
+  max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pre.loaded::after{content:attr(title)}
+.pre:hover{border-color:var(--edge-hi);color:var(--txt-2)}
+.pre.loaded{color:var(--txt);border-color:var(--edge-hi)}
+.pre.playing{color:var(--accent);border-color:var(--accent);background:var(--glass-2);
+  box-shadow:0 0 24px -6px var(--accent-glow)}
+.tuner{display:grid;gap:10px;grid-template-columns:1fr 1.5fr auto auto;margin-bottom:12px}
+.glass-select,.glass-input{min-height:var(--tap);width:100%;padding:0 14px;border-radius:var(--r-sm);
+  background:rgba(0,0,0,.45);border:1px solid var(--edge);color:var(--txt);font-family:inherit;
+  font-size:14px;letter-spacing:1.2px;outline:none;transition:.18s}
+.glass-select:focus,.glass-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow)}
+.glass-input::placeholder{color:var(--txt-3);text-transform:uppercase;letter-spacing:2.2px;font-size:12px}
+.glass-select{cursor:pointer;text-transform:uppercase;font-size:12px;letter-spacing:2.2px}
+.glass-select option{background:#0a0a0c;color:var(--txt)}
+.act-row{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap}
+#stationScroll{max-height:min(42vh,380px);overflow-y:auto;scrollbar-width:thin;
+  scrollbar-color:var(--edge-hi) transparent;margin:0 -6px;padding:0 6px}
+.station-row{min-height:var(--tap);padding:10px 13px;border-radius:var(--r-sm);cursor:pointer;
+  display:flex;align-items:center;gap:11px;transition:.15s;border:1px solid transparent;
+  color:var(--txt-2);font-size:15px;letter-spacing:.4px}
+.station-row:hover{background:var(--glass);color:var(--txt)}
+.station-row.highlight{background:var(--glass-2);border-color:var(--accent);color:var(--txt)}
+.station-row.active{color:var(--accent)}
+.st-br{font-size:9px;letter-spacing:1.4px;color:var(--txt-3);padding:3px 7px;border-radius:5px;
+  background:var(--glass);flex-shrink:0}
+.st-fav{width:34px;height:34px;border-radius:8px;border:none;background:transparent;cursor:pointer;
+  color:var(--txt-3);font-size:15px;flex-shrink:0;transition:.15s;font-family:inherit}
+.st-fav:hover{color:var(--accent);background:var(--glass)}
+.st-fav.on{color:var(--accent)}
+.st-msg{padding:34px 14px;text-align:center;color:var(--txt-3);font-size:12px;letter-spacing:2.6px;
+  text-transform:uppercase}
+/* Stations 3fr : ring 1fr — the list was full-width with the ring stranded
+   underneath. align-items:center floats the ring in the middle of the gap.
+   The .stage order:-1 from the hero breakpoint has to be cancelled here, or
+   the ring jumps above the list once this stacks. */
+.radio-cols{display:grid;grid-template-columns:3fr 5fr;gap:clamp(12px,1.6vw,20px);
+  align-items:center}
+.radio-cols .stage{order:0;max-width:min(54vh,480px)}
+@media (max-width:900px){
+  .radio-cols{grid-template-columns:1fr}
+  .radio-cols .stage{max-width:min(30vh,240px);margin-top:4px}
+}
+.custom-panel{padding:16px;margin-bottom:16px}
+.custom-row{display:grid;grid-template-columns:1fr 2fr auto auto;gap:10px;margin-bottom:10px}
+#customList{max-height:min(22vh,170px);overflow-y:auto;margin:0 -6px;padding:0 6px;
+  scrollbar-width:thin;scrollbar-color:var(--edge-hi) transparent}
+.cs-msg{padding:14px;text-align:center;color:var(--txt-3);font-size:11px;letter-spacing:2.4px;
+  text-transform:uppercase}
+@media (max-width:900px){.custom-row{grid-template-columns:1fr 1fr}}
+@media (max-width:720px){.custom-row{grid-template-columns:1fr}}
+#radioNowPlaying{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+#rnpChannel{font-size:20px;font-weight:700;color:var(--accent)}
+#rnpBitrate{font-size:10px;letter-spacing:2.4px;color:var(--txt-3);text-transform:uppercase}
+
+/* ── PLAYER BAR ─────────────────────────────────────────────── */
+#bar{grid-area:bar;display:grid;align-items:center;gap:clamp(12px,2vw,28px);
+  grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);padding:0 clamp(12px,2vw,24px);
+  border-top:1px solid var(--edge);background:rgba(0,0,0,.5);backdrop-filter:blur(28px)}
+.now{display:flex;align-items:center;gap:13px;min-width:0}
+.now .thumb{width:56px;height:56px;border-radius:var(--r-sm);flex-shrink:0;border:1px solid var(--edge);
+  background:var(--glass);display:grid;place-items:center;overflow:hidden;position:relative}
+.now .thumb::after{content:'';position:absolute;inset:0;
+  background:linear-gradient(135deg,var(--bg1) 0%,transparent 55%,var(--bg2) 100%);opacity:.28}
+.now .thumb svg{width:20px;height:20px;stroke:var(--txt-3);fill:none;stroke-width:1.6;z-index:1}
+.now .meta{min-width:0}
+#lnpTitle{font-size:16px;font-weight:600;letter-spacing:.5px;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;color:var(--txt)}
+#lnpTitle:empty::after{content:'NOTHING PLAYING';color:var(--txt-3);font-size:13px;letter-spacing:2.4px}
+.sub{display:flex;align-items:center;gap:8px;margin-top:3px;min-width:0}
+#lnpArtist,#lnpAlbum{font-size:11px;letter-spacing:2.4px;color:var(--txt-3);text-transform:uppercase;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#lnpSource:empty,#lnpArtist:empty,#lnpAlbum:empty{display:none}
+#lnpSource{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:99px;
+  background:color-mix(in srgb,var(--live) 16%,transparent);
+  border:1px solid color-mix(in srgb,var(--live) 45%,transparent);color:var(--live);
+  font-size:9px;letter-spacing:2px;flex-shrink:0}
+.mid{display:flex;flex-direction:column;align-items:center;gap:7px;min-width:min(46vw,420px)}
+.tp{display:flex;align-items:center;gap:6px}
+.tb{width:var(--tap);height:var(--tap);border-radius:50%;border:none;background:transparent;
+  color:var(--txt-2);cursor:pointer;display:grid;place-items:center;transition:.18s;padding:0}
+.tb svg{width:20px;height:20px;stroke:currentColor;fill:currentColor;stroke-width:1.4}
+.tb:hover{color:var(--txt);background:var(--glass)}
+.tb.play{width:54px;height:54px;background:var(--accent);color:#0d0204;
+  box-shadow:0 6px 26px -6px var(--accent-glow);position:relative}
+.tb.play svg{width:24px;height:24px;position:absolute}
+.tb.play:hover{filter:brightness(1.12);transform:scale(1.05)}
+#seekWrap{display:flex;align-items:center;gap:11px;width:100%}
+#lnpTime{font-size:11px;letter-spacing:1.4px;color:var(--txt-3);font-variant-numeric:tabular-nums;
+  flex-shrink:0;min-width:62px}
+#seekTrack{flex:1;height:20px;display:flex;align-items:center;cursor:pointer;position:relative}
+#seekTrack::before{content:'';position:absolute;inset-inline:0;height:4px;border-radius:99px;
+  background:rgba(255,255,255,.11)}
+#seekFill{position:relative;height:4px;border-radius:99px;background:var(--accent);
+  box-shadow:0 0 12px var(--accent-glow);transition:width .2s linear;pointer-events:none}
+#seekThumb{position:absolute;top:50%;transform:translate(-50%,-50%);width:12px;height:12px;
+  border-radius:50%;background:var(--wht);box-shadow:0 0 10px var(--accent-glow);opacity:0;
+  transition:opacity .18s;pointer-events:none}
+#seekWrap:hover #seekThumb{opacity:1}
+.rgt{display:flex;align-items:center;justify-content:flex-end;gap:11px}
+.vol{display:flex;align-items:center;gap:9px}
+.vol input{width:clamp(70px,9vw,120px);accent-color:var(--accent);cursor:pointer;height:20px}
+
+/* ── VIZ ────────────────────────────────────────────────────── */
+#vizPanel{background:#000}
+#vizCanvas{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none}
+#vizOverlay{position:absolute;bottom:0;left:0;right:0;padding:14px 20px 18px;
+  background:linear-gradient(transparent,rgba(0,0,0,.92) 40%);transition:opacity .6s ease;z-index:10;
+  pointer-events:auto}
 #vizOverlay.hidden-controls{opacity:0;pointer-events:none}
-#vizTransport{display:flex;justify-content:center;align-items:flex-end;gap:10px;margin-bottom:10px}
+#vizTransport{display:flex;justify-content:center;align-items:center;gap:12px;margin-bottom:10px}
 #vizVolWrap{display:flex;align-items:center;gap:8px;margin-left:24px}
-#vizVolWrap span{font-family:'Rajdhani',sans-serif;font-size:8px;letter-spacing:2px;text-transform:uppercase;color:var(--mono-dim)}
-#vizVol{width:110px;accent-color:var(--lcd);cursor:pointer}
-#vizVolNum{font-family:'Rajdhani',sans-serif;font-size:13px;color:var(--lcd);text-shadow:0 0 8px var(--lcd);width:30px;text-align:right}
-#vizPresets{display:flex;flex-wrap:wrap;justify-content:center;gap:4px;margin-bottom:6px}
-#vizColors {display:flex;flex-wrap:wrap;justify-content:center;gap:4px}
-.vb{padding:4px 9px;font-family:'Rajdhani',sans-serif;font-size:11px;letter-spacing:1px;text-transform:uppercase;background:rgba(0,0,0,.85);font-weight:600;border:1px solid var(--mono-dim);color:var(--mono-dim);cursor:pointer;transition:all .15s;pointer-events:auto}
-.vb.active,.vb:hover{border-color:var(--lcd);color:var(--lcd);text-shadow:0 0 6px var(--lcd)}
+#vizVolWrap span{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--txt-3)}
+#vizVol{width:110px;accent-color:var(--accent);cursor:pointer}
+#vizVolNum{font-size:13px;color:var(--accent);width:30px;text-align:right}
+#vizPresets,#vizColors{display:flex;flex-wrap:wrap;justify-content:center;gap:5px}
+#vizPresets{margin-bottom:7px}
+.vb{padding:6px 11px;font-family:inherit;font-size:11px;letter-spacing:1px;text-transform:uppercase;
+  background:rgba(0,0,0,.85);font-weight:600;border:1px solid var(--edge);color:var(--txt-3);
+  cursor:pointer;transition:.15s;border-radius:7px;min-height:32px}
+.vb.active,.vb:hover{border-color:var(--accent);color:var(--accent);box-shadow:0 0 12px -4px var(--accent-glow)}
 
-/* THEME VARS */
-:root{--lcd:#ffaa00;--lcd-dim:rgba(255,170,0,.4);--mono:rgba(255,170,0,.75);--mono-dim:rgba(255,170,0,.28);--ring1:#ff8800;--ring2:#ffd700;--ring3:#aa4400;--ring4:#552200;--ring5:#1a0800}
-[data-theme="electric"]{--lcd:#00d4ff;--lcd-dim:rgba(0,212,255,.4);--mono:rgba(0,212,255,.75);--mono-dim:rgba(0,212,255,.28)}
-[data-theme="emerald"] {--lcd:#00ff66;--lcd-dim:rgba(0,255,102,.4);--mono:rgba(0,255,102,.75);--mono-dim:rgba(0,255,102,.28)}
-[data-theme="palestine"]{--lcd:#cc0000;--lcd-dim:rgba(204,0,0,.35);--mono:rgba(255,255,255,.82);--mono-dim:rgba(255,255,255,.28)}
-[data-theme="palestine"] #sbPal.active{filter:brightness(1.2) drop-shadow(0 0 10px #cc0000) drop-shadow(0 0 5px #ff0000)!important}
-[data-theme="palestine"] .nav-label,
-[data-theme="palestine"] .tp-css-btn,
-[data-theme="palestine"] .lcd,
-[data-theme="palestine"] .hw-line,
-[data-theme="palestine"] .file-btn:hover,
-[data-theme="palestine"] .pl-row:hover,
-[data-theme="palestine"] .pl-row.active,
-[data-theme="palestine"] .pl-rm:hover,
-[data-theme="palestine"] .glass-select,
-[data-theme="palestine"] .glass-input,
-[data-theme="palestine"] .glass-select option,
-[data-theme="palestine"] .rand-btn:hover,
-[data-theme="palestine"] .station-row,
-[data-theme="palestine"] .st-fav:hover,
-[data-theme="palestine"] #vizVolNum,
-[data-theme="palestine"] .vb.active,
-[data-theme="palestine"] .vb:hover{color:#fff!important;text-shadow:0 0 6px rgba(255,255,255,.25)!important}
+/* ═══ RESPONSIVE ════════════════════════════════════════════ */
+@media (max-width:1000px){
+  #sama{--rail:72px;--bar:96px}
+  .hero{grid-template-columns:1fr;text-align:center}
+  .hero-l p{margin-inline:auto}
+  .chips,.cta{justify-content:center}
+  .stage{max-width:min(38vh,320px);order:-1}
+  .cols{grid-template-columns:1fr}
+  .tuner{grid-template-columns:1fr 1fr}
+  .rgt{display:none}
+  .mid{min-width:0;width:100%}
+}
+@media (max-width:720px){
+  #sama{--top:54px;--bar:64px}
+  #app{grid-template-columns:1fr;grid-template-rows:var(--top) 1fr var(--bar) 62px;
+    grid-template-areas:"top" "main" "bar" "rail"}
+  /* the rail becomes the bottom tab bar — same DOM, same ids */
+  #rail{flex-direction:row;gap:0;padding:0;border-right:none;border-top:1px solid var(--edge);
+    background:rgba(0,0,0,.62);padding-bottom:env(safe-area-inset-bottom)}
+  .nav{flex:1;width:auto;height:100%;border-radius:0;border:none;gap:4px}
+  .nav.active{background:transparent;box-shadow:none;border:none}
+  .nav.active::before{left:50%;top:0;transform:translateX(-50%);width:26px;height:3px;
+    border-radius:0 0 3px 3px}
+  #sama[data-theme="palestine"] .nav{border:none;border-top:2px solid transparent}
+  #sama[data-theme="palestine"] .nav.active{border-top-color:currentColor}
+  .mark{width:86px;height:21px}   /* keep the box aspect so the mask stays true */
+  .flag{width:26px;height:13px}
+  #netPill{padding:6px 9px;font-size:0;gap:0}
+  .dots{display:none}
+  .themes{gap:5px}
+  .tpill{width:23px;height:23px}
+  #bar{grid-template-columns:1fr auto;gap:10px;position:relative;padding:0 12px}
+  .now .thumb{width:42px;height:42px}
+  #lnpTitle{font-size:14px}
+  .mid{flex-direction:row;gap:2px;min-width:0}
+  #seekWrap{position:absolute;inset-inline:0;top:0;gap:0}
+  #lnpTime{display:none}
+  #seekTrack{height:3px}
+  #seekTrack::before{height:3px}
+  #seekThumb{display:none}
+  .tb{width:40px;height:40px}
+  .tb.play{width:46px;height:46px}
+  .tp .skip{display:none}
+  .actions{grid-template-columns:1fr 1fr}
+  .file-btn{min-height:68px}
+  .presets{display:flex;overflow-x:auto;gap:8px;padding-bottom:6px;scroll-snap-type:x mandatory}
+  .presets::-webkit-scrollbar{display:none}
+  .pre{flex:0 0 92px;scroll-snap-align:start}
+  .tuner{grid-template-columns:1fr}
+  .local-panel{max-height:none}
+  .hero{min-height:0}
+  .stage{max-width:min(34vh,260px)}
+  .vb{min-height:36px;padding:7px 12px}
+}
+@media (max-height:520px) and (orientation:landscape){
+  #sama{--top:46px;--bar:58px}
+  .stage{max-width:min(52vh,220px)}
+  .hero{min-height:0}
+}
 </style>
 </head>
 <body>
-<div id="sama" data-theme="amber">
+<div id="sama" data-theme="palestine">
 
-<img id="basePanel" class="layer" src="SAMA PARTS/SAMA-CONSOLE-HOME-BASE-PANEL.png">
+<div id="bg"></div>
+<div id="grain"></div>
 
-<!-- HOME -->
-<div id="homePanel" class="mode-panel">
-  <!-- ring: centered in content area x=165-1228, y=125-952 -->
-  <!-- content center x=697, y=490; canvas 380x380; left=507, top=300 -->
-  <canvas id="homeRing" class="ring" width="470" height="470" style="left:462px;top:255px;width:470px;height:470px"></canvas>
-  <div id="homeWelcome">
-    <div class="hw-line">PLAY LOCAL FILES OR ENJOY</div>
-    <div class="hw-line">INTERNET RADIO ACROSS 20+ GENRES</div>
-    <div class="hw-line">WITH PRESET STATION MEMORY</div>
-    <div class="hw-line">MP3 &middot; WAV &middot; MIDI &middot; HLS STREAMS</div>
-  </div>
-  <div id="homeNowPlaying">
-    <div id="hnpTime" class="lcd">--:--:--</div>
-    <div id="hnpSource" class="mono">-- SAMA --</div>
-    <div id="hnpArtist" class="lcd" style="font-size:11px"></div>
-    <div id="hnpTitle"  class="lcd" style="font-size:17px"></div>
-    <div id="hnpAlbum"  class="mono" style="font-size:8px"></div>
-  </div>
-  <div id="homeTransportWrap">
-    <div id="htpRadio" style="display:none;flex-direction:column;align-items:center;gap:8px">
-      <div onclick="togglePlay()" style="position:relative;cursor:pointer;width:65px;height:65px">
-        <img id="htpPlayR"  class="tp-img" src="SAMA PARTS/CROPS/PLAY.png"  width="65" height="65" style="position:absolute">
-        <img id="htpPauseR" class="tp-img" src="SAMA PARTS/CROPS/PAUSE.png" width="62" height="62" style="position:absolute;display:none">
+<!-- engine writes to these; the new shell renders its own equivalents -->
+<img id="basePanel" alt="">
+<img id="wifiOn"  alt=""><img id="wifiOff" alt="">
+<img id="radioSelectBtn" alt="">
+<img id="sbAmber" alt=""><img id="sbElectric" alt=""><img id="sbEmerald" alt=""><img id="sbPal" alt="">
+<div id="homeTransportWrap"><div id="htpRadio"></div><div id="htpLocal"></div></div>
+<div id="hnpTime"></div><div id="hnpSource"></div><div id="hnpArtist"></div>
+<div id="hnpTitle"></div><div id="hnpAlbum"></div>
+<div id="rnpTime"></div><div id="rnpSource"></div>
+<input id="fileIn" type="file" multiple accept=".mp3,.wav,.mid,.midi">
+
+<div id="app">
+
+  <div id="chrome">
+
+    <!-- ══ TOPBAR ══ -->
+    <header id="topbar">
+      <div class="brand">
+        <svg class="flag" viewBox="0 0 60 30" role="img" aria-label="Flag of Palestine">
+          <rect width="60" height="10" y="0"  fill="#000000"/>
+          <rect width="60" height="10" y="10" fill="#FFFFFF"/>
+          <rect width="60" height="10" y="20" fill="#007A3D"/>
+          <path d="M0 0 L20 15 L0 30 Z" fill="#CE1126"/>
+        </svg>
+        <div class="mark" role="img" aria-label="SAMA"></div>
       </div>
-      <img onclick="stopAll()" class="tp-img" src="SAMA PARTS/CROPS/STOP.png" width="34" height="34" style="cursor:pointer">
-    </div>
-    <div id="htpLocal" style="display:flex;flex-direction:column;align-items:center;gap:8px">
-      <div style="display:flex;align-items:center;gap:4px">
-        <div class="tp-css-btn tp-prev" onclick="prevTrack()"><svg viewBox="0 0 44 44" width="36" height="36"><polygon points="6,22 18,8 18,36" fill="currentColor"/><polygon points="22,22 34,8 34,36" fill="currentColor"/></svg></div>
-        <div onclick="togglePlay()" style="position:relative;cursor:pointer;width:65px;height:65px">
-          <img id="htpPlayL"  class="tp-img" src="SAMA PARTS/CROPS/PLAY.png"  width="65" height="65" style="position:absolute">
-          <img id="htpPauseL" class="tp-img" src="SAMA PARTS/CROPS/PAUSE.png" width="62" height="62" style="position:absolute;display:none">
+
+      <div class="themes nodrag">
+        <button class="tpill" style="--c:#ee2a35" data-t="palestine" title="Palestine" onclick="setTheme('palestine')"></button>
+        <button class="tpill" style="--c:#ffaa00" data-t="amber"     title="Amber"     onclick="setTheme('amber')"></button>
+        <button class="tpill" style="--c:#c4a9ff" data-t="electric"  title="Lavender"  onclick="setTheme('electric')"></button>
+        <button class="tpill" style="--c:#00ff66" data-t="emerald"   title="Emerald"   onclick="setTheme('emerald')"></button>
+      </div>
+
+      <div id="netPill" class="nodrag"><i></i><s></s></div>
+
+      <div class="dots nodrag">
+        <button class="d-min" id="dotAmber" title="Minimize" onclick="doMinimize()"></button>
+        <button class="d-max" id="dotGreen" title="Maximize" onclick="doMaximize()"></button>
+        <button class="d-cls" id="dotRed"   title="Close"    onclick="doClose()"></button>
+      </div>
+    </header>
+
+    <!-- ══ NAV ══ -->
+    <nav id="rail">
+      <button class="nav active" id="navHome" onclick="setMode('home')">
+        <svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><em>Home</em>
+      </button>
+      <button class="nav" id="navLocal" onclick="setMode('local')">
+        <svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><em>Local</em>
+      </button>
+      <button class="nav" id="navRadio" onclick="setMode('radio')">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3.5 9h17M3.5 15h17M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18"/></svg><em>Radio</em>
+      </button>
+      <button class="nav" id="navViz" onclick="setMode('viz')">
+        <svg viewBox="0 0 24 24"><path d="M4 14v-4M8 18V6M12 15V9M16 20V4M20 13v-2"/></svg><em>Viz</em>
+      </button>
+    </nav>
+
+    <!-- ══ PLAYER BAR ══ -->
+    <footer id="bar">
+      <div class="now">
+        <div class="thumb"><svg viewBox="0 0 24 24"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg></div>
+        <div class="meta">
+          <div id="lnpTitle"></div>
+          <div class="sub"><span id="lnpSource"></span><span id="lnpArtist"></span><span id="lnpAlbum"></span></div>
         </div>
-        <div class="tp-css-btn tp-next" onclick="nextTrack()"><svg viewBox="0 0 44 44" width="36" height="36"><polygon points="22,22 10,8 10,36" fill="currentColor"/><polygon points="38,22 26,8 26,36" fill="currentColor"/></svg></div>
       </div>
-      <img onclick="stopAll()" class="tp-img" src="SAMA PARTS/CROPS/STOP.png" width="34" height="34" style="cursor:pointer">
-    </div>
-  </div>
-</div>
 
-<!-- LOCAL -->
-<div id="localPanel" class="mode-panel hidden">
-  <img class="layer" src="SAMA PARTS/SAMA-CONSOLE-LOCAL-UI-BASE-PANEL.png">
-  <!-- ring: right portion, centered x=870, y=490; canvas 360x360; left=690, top=310 -->
-  <canvas id="localRing" class="ring" width="380" height="380" style="left:507px;top:375px;width:380px;height:380px"></canvas>
-
-  <!-- File buttons — positioned in their panel slots (slots at y=240-330) -->
-  <div id="localFileBar"></div>
-  <button class="file-btn" style="left:210px;top:240px;width:230px;height:90px" onclick="openFile()">LOAD FILE</button>
-  <button class="file-btn" style="left:451px;top:240px;width:230px;height:90px" onclick="openFolder()">LOAD FOLDER</button>
-  <button class="file-btn" style="left:711px;top:240px;width:231px;height:90px" onclick="createPlaylist()">CREATE PLAYLIST</button>
-  <button class="file-btn" style="left:952px;top:240px;width:230px;height:90px" onclick="loadSavedPlaylist()">LOAD PLAYLIST</button>
-  <input id="fileIn" type="file" multiple accept=".mp3,.wav,.mid,.midi">
-
-  <!-- Now playing (top right) -->
-  <div id="localNowPlaying">
-    <div id="lnpTime" class="lcd">--:--:--</div>
-    <div id="lnpSource" class="mono">-- SAMA --</div>
-    <div id="lnpArtist" class="lcd" style="font-size:10px"></div>
-    <div id="lnpTitle"  class="lcd" style="font-size:14px"></div>
-    <div id="lnpAlbum"  class="mono" style="font-size:8px"></div>
-  </div>
-
-  <!-- Album art (near sidebar) -->
-  <div id="albumArt"><img id="albumArtImg" src=""><span>NO ART</span></div>
-
-  <!-- Tracks panel — left of ring, below buttons -->
-  <div id="localTracksPanel" class="local-panel">
-    <div class="local-panel-hdr">
-      <span>TRACKS</span>
-      <span id="localTrackCount" class="lcd" style="font-size:11px">0</span>
-    </div>
-    <div id="localPlaylist"></div>
-  </div>
-
-  <!-- Saved playlists panel — right of ring -->
-  <div id="localSavedPanel" class="local-panel">
-    <div class="local-panel-hdr">
-      <span>SAVED PLAYLISTS</span>
-      <span id="savedCount" class="lcd" style="font-size:11px">0</span>
-    </div>
-    <div id="savedPlaylistList"></div>
-  </div>
-
-  <!-- Seek bar — centered under content -->
-  <div id="seekWrap" onclick="onSeek(event)">
-    <div id="seekTrack"><div id="seekFill"></div><div id="seekThumb" style="left:0%"></div></div>
-  </div>
-
-  <!-- Transport: centered at x=697 -->
-  <!-- Left edge of group: 697 - (62+6+42.5) = 586.5 -->
-  <!-- LOCAL transport: same layout as HOME, centered at ring x=697 -->
-  <div style="position:absolute;left:165px;right:0;top:798px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:8px;pointer-events:auto">
-    <div style="display:flex;align-items:center;gap:6px">
-      <div class="tp-css-btn tp-prev" onclick="prevTrack()"><svg viewBox="0 0 44 44" width="36" height="36"><polygon points="6,22 18,8 18,36" fill="currentColor"/><polygon points="22,22 34,8 34,36" fill="currentColor"/></svg></div>
-      <div onclick="togglePlay()" style="position:relative;cursor:pointer;width:65px;height:65px">
-        <img id="localBtnPlay"  class="tp-img" src="SAMA PARTS/CROPS/PLAY.png"  width="65" height="65" style="position:absolute">
-        <img id="localBtnPause" class="tp-img" src="SAMA PARTS/CROPS/PAUSE.png" width="62" height="62" style="position:absolute;display:none">
+      <div class="mid">
+        <div class="tp">
+          <button class="tb skip" onclick="prevTrack()" title="Previous"><svg viewBox="0 0 24 24"><path d="M18 5v14L7 12zM6 5h2v14H6z"/></svg></button>
+          <button class="tb play" onclick="togglePlay()" title="Play / Pause">
+            <svg id="localBtnPlay"  viewBox="0 0 24 24"><path d="M6 4v16l14-8z"/></svg>
+            <svg id="localBtnPause" viewBox="0 0 24 24" style="display:none"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
+          </button>
+          <button class="tb skip" onclick="nextTrack()" title="Next"><svg viewBox="0 0 24 24"><path d="M6 5v14l11-7zM16 5h2v14h-2z"/></svg></button>
+          <button class="tb skip" onclick="stopAll()" title="Stop"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg></button>
+        </div>
+        <div id="seekWrap" onclick="onSeek(event)">
+          <span id="lnpTime" class="lcd">--:--:--</span>
+          <div id="seekTrack"><div id="seekFill"></div><div id="seekThumb" style="left:0%"></div></div>
+        </div>
       </div>
-      <div class="tp-css-btn tp-next" onclick="nextTrack()"><svg viewBox="0 0 44 44" width="36" height="36"><polygon points="22,22 10,8 10,36" fill="currentColor"/><polygon points="38,22 26,8 26,36" fill="currentColor"/></svg></div>
-    </div>
-    <div onclick="stopAll()" style="cursor:pointer">
-      <img class="tp-img" src="SAMA PARTS/CROPS/STOP.png" width="34" height="34">
-    </div>
-  </div>
-</div>
 
-<!-- RADIO -->
-<div id="radioPanel" class="mode-panel hidden">
-  <img class="layer" src="SAMA PARTS/SAMA-CONSOLE-radio-mode-background.png">
-  <!-- ring: between presets (x=394) and station panel (x=901); center x=648, y=490; canvas 360x360; left=468, top=310 -->
-  <canvas id="radioRing" class="ring" width="360" height="360" style="left:330px;top:300px;width:360px;height:360px"></canvas>
-
-  <img id="radioSelectBtn" class="layer" src="SAMA PARTS/SAMA-CONSOLE-AMBER-MODE-STATION-SELECT-BUTTON.png">
-  <img class="layer" src="SAMA PARTS/SAMA-CONSOLE-PALESTINE-MODE-STATION-FAVORITE-BUTTON.png">
-  <!-- Clickable hotspots over the SELECT / FAVORITE button graphics (layer PNGs are pointer-events:none) -->
-  <div class="radio-hotspot" title="SELECT — play highlighted station"
-    style="left:876px;top:219px;width:156px;height:50px" onclick="selectHighlighted()"></div>
-  <div class="radio-hotspot" title="FAVORITE — save / unsave highlighted station"
-    style="left:1032px;top:219px;width:156px;height:50px" onclick="toggleFavHighlighted()"></div>
-  <img class="layer" src="SAMA PARTS/SAMA-CONSOLE-TEXT-STATIONS.png">
-  <img class="layer" src="SAMA PARTS/SAMA-CONSOLE-RADIO-GENRE-SELECTOR-GLASS-PANEL.png">
-  <img class="layer" src="SAMA PARTS/SAMA-CONSOLE-RADIO-STATION-MENU-GLASS-PANEL.png">
-
-  <div id="radioNowPlaying">
-    <div id="rnpTime"    class="lcd">--:--:--</div>
-    <div id="rnpSource"  class="mono">SAMA RADIO</div>
-    <div id="rnpChannel" class="lcd" style="font-size:11px;opacity:.85">-- SELECT A STATION --</div>
-    <div id="rnpBitrate" class="mono">STREAMING</div>
-  </div>
-
-  <!-- Radio presets: user-designed PNG buttons -->
-  <img id="rPreset0" class="radio-preset-png" src="SAMA PARTS/CROPS/BTN-PRESET-1.png" style="left:221px;top:156px;width:118px;height:47px" onclick="clickPreset(0)">
-  <img id="rPreset1" class="radio-preset-png" src="SAMA PARTS/CROPS/BTN-PRESET-2.png" style="left:343px;top:155px;width:118px;height:48px" onclick="clickPreset(1)">
-  <img id="rPreset2" class="radio-preset-png" src="SAMA PARTS/CROPS/BTN-PRESET-3.png" style="left:465px;top:156px;width:118px;height:46px" onclick="clickPreset(2)">
-  <img id="rPreset3" class="radio-preset-png" src="SAMA PARTS/CROPS/BTN-PRESET-4.png" style="left:587px;top:156px;width:118px;height:46px" onclick="clickPreset(3)">
-  <img id="rPreset4" class="radio-preset-png" src="SAMA PARTS/CROPS/BTN-PRESET-5.png" style="left:709px;top:156px;width:118px;height:46px" onclick="clickPreset(4)">
-
-  <div id="genreControls">
-    <div class="glass-label">GENRE</div>
-    <select id="radioTag" class="glass-select">
-      <option value="">ALL GENRES</option>
-      <option value="jazz">JAZZ</option><option value="electronic">ELECTRONIC</option>
-      <option value="trance">TRANCE</option><option value="house">HOUSE</option>
-      <option value="ambient">AMBIENT</option><option value="classical">CLASSICAL</option>
-      <option value="synthwave">SYNTHWAVE</option><option value="rock">ROCK</option>
-      <option value="metal">METAL</option><option value="blues">BLUES</option>
-      <option value="hip-hop">HIP HOP</option><option value="pop">POP</option>
-      <option value="k-pop">K-POP</option><option value="anime">ANIME</option>
-      <option value="persian">PERSIAN</option><option value="lofi">LO-FI</option>
-      <option value="country">COUNTRY</option><option value="news">NEWS</option>
-      <option value="talk">TALK</option>
-    </select>
-    <div class="glass-label">SEARCH</div>
-    <input id="radioQ" class="glass-input" type="text" placeholder="STATION NAME...">
-    <button class="scan-btn" onclick="scanRadio()">SCAN</button>
-    <button class="rand-btn" onclick="scanRandom()">RANDOM GENRE</button>
-  </div>
-
-  <div id="stationScroll"><div class="st-msg">PRESS SCAN TO LOAD STATIONS</div></div>
-
-  <!-- Radio transport: centered at ring x=510 -->
-  <div style="position:absolute;left:478px;top:757px;cursor:pointer;pointer-events:auto" onclick="togglePlay()">
-    <img id="radioBtnPlay"  class="tp-img" src="SAMA PARTS/CROPS/PLAY.png"  width="65" height="65" style="position:absolute">
-    <img id="radioBtnPause" class="tp-img" src="SAMA PARTS/CROPS/PAUSE.png" width="62" height="62" style="position:absolute;display:none">
-  </div>
-  <img onclick="stopAll()" class="tp-img" src="SAMA PARTS/CROPS/STOP.png" width="46" height="46"
-    style="position:absolute;left:487.5px;top:848px;cursor:pointer">
-</div>
-
-<!-- VIZ — FULL SCREEN -->
-<div id="vizPanel" class="mode-panel hidden" style="background:#000">
-  <canvas id="vizCanvas" width="1228" height="952"></canvas>
-
-  <!-- Auto-hiding overlay (controls + presets) -->
-  <div id="vizOverlay">
-    <!-- Transport + Volume -->
-    <div id="vizTransport">
-      <div onclick="togglePlay()" style="position:relative;cursor:pointer;width:60px;height:60px">
-        <img id="vizBtnPlay"  class="tp-img" src="SAMA PARTS/CROPS/PLAY.png"  width="60" height="60" style="position:absolute">
-        <img id="vizBtnPause" class="tp-img" src="SAMA PARTS/CROPS/PAUSE.png" width="57" height="57" style="position:absolute;display:none">
+      <div class="rgt">
+        <div class="vol">
+          <svg viewBox="0 0 24 24" style="width:18px;height:18px;stroke:var(--txt-3);fill:none;stroke-width:1.7"><path d="M4 9v6h4l5 4V5L8 9zM17 9a4 4 0 0 1 0 6"/></svg>
+          <input type="range" min="0" max="100" value="80" id="vizVol">
+          <span id="vizVolNum" class="lcd">80</span>
+        </div>
       </div>
-      <img onclick="stopAll()" class="tp-img" src="SAMA PARTS/CROPS/STOP.png" width="34" height="34" style="cursor:pointer;margin-top:10px">
-      <div id="vizVolWrap">
-        <span>VOL</span>
-        <input type="range" id="vizVol" min="0" max="100" value="80">
-        <span id="vizVolNum" class="lcd" style="font-size:13px;width:30px">80</span>
+    </footer>
+
+  </div><!-- /#chrome -->
+
+  <!-- ══ MAIN ══ -->
+  <main id="main">
+
+    <!-- HOME -->
+    <div id="homePanel" class="mode-panel">
+      <div class="hero">
+        <div class="hero-l">
+          <h1>Play anything.<br><u>Hear everything.</u></h1>
+          <p>Local files or internet radio across 20+ genres, with preset station
+             memory and 24 real-time visualizers.</p>
+          <div class="chips">
+            <span class="chip">MP3</span><span class="chip">WAV</span>
+            <span class="chip">MIDI</span><span class="chip">HLS</span>
+          </div>
+          <div class="cta">
+            <button class="btn pri" onclick="setMode('local')">
+              <svg viewBox="0 0 24 24"><path d="M5 3v18l15-9z"/></svg> Open Library
+            </button>
+            <button class="btn" onclick="setMode('radio')">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3.5 9h17M3.5 15h17"/></svg> Browse Radio
+            </button>
+          </div>
+        </div>
+        <!-- 720px backing store so it stays crisp when the stage scales up on
+             large displays; all ring geometry is relative to canvas width. -->
+        <div class="stage"><canvas id="homeRing" class="ring" width="720" height="720"></canvas></div>
       </div>
     </div>
-    <!-- Preset buttons -->
-    <div id="vizPresets">
-      <button class="vb active" id="vp-geometric"  onclick="setVizMode('geometric')">GEOM</button>
-      <button class="vb" id="vp-spectrum"   onclick="setVizMode('spectrum')">SPEC</button>
-      <button class="vb" id="vp-oscp"  onclick="setVizMode('oscp')">OSCP</button>
-      <button class="vb" id="vp-liss"  onclick="setVizMode('liss')">LISS</button>
-      <button class="vb" id="vp-spct"  onclick="setVizMode('spct')">SPCT</button>
-      <button class="vb" id="vp-radial"     onclick="setVizMode('radial')">RADL</button>
-      <button class="vb" id="vp-mirror"     onclick="setVizMode('mirror')">MIRR</button>
-      <button class="vb" id="vp-plasma"     onclick="setVizMode('plasma')">PLSM</button>
-      <button class="vb" id="vp-nova"       onclick="setVizMode('nova')">NOVA</button>
-      <button class="vb" id="vp-nebula"     onclick="setVizMode('nebula')">NEBL</button>
-      
-      <button class="vb" id="vp-synapse"    onclick="setVizMode('synapse')">SYN</button>
-      <button class="vb" id="vp-hypercube"  onclick="setVizMode('hypercube')">HCUB</button>
-      <button class="vb" id="vp-tunnel"     onclick="setVizMode('tunnel')">TUNL</button>
-      <button class="vb" id="vp-singularity" onclick="setVizMode('singularity')">SNGL</button>
-      <button class="vb" id="vp-chronos"    onclick="setVizMode('chronos')">CHRO</button>
-      <button class="vb" id="vp-hyperspace" onclick="setVizMode('hyperspace')">HYPR</button>
-      <button class="vb" id="vp-quantum"    onclick="setVizMode('quantum')">QNTM</button>
-      <button class="vb" id="vp-strata"     onclick="setVizMode('strata')">STRATA</button>
-      <button class="vb" id="vp-aurora"     onclick="setVizMode('aurora')">AURORA</button>
-      <button class="vb" id="vp-pulse"      onclick="setVizMode('pulse')">PULSE</button>
-      <button class="vb" id="vp-ocean"      onclick="setVizMode('ocean')">OCEAN</button>
-      <button class="vb" id="vp-spacecat" onclick="setVizMode('spacecat')">SPCCAT</button>
-      <button class="vb" id="vp-mosaic"   onclick="setVizMode('mosaic')">MOSAIC</button>
-      <button class="vb" id="vp-random"     onclick="setVizMode('random')">RND</button>
-      <button class="vb" style="border-color:#aa0000;color:#ff4444;margin-left:12px" onclick="setMode('home')">&#10005; EXIT</button>
-    </div>
-    <!-- Color modes -->
-    <div id="vizColors">
-      
-      <button class="vb active" id="vc-drift" onclick="setColorMode('drift')">DRIFT</button>
-      <button class="vb" id="vc-bloom"           onclick="setColorMode('bloom')">BLOOM</button>
-      <button class="vb" id="vc-prism"           onclick="setColorMode('prism')">PRISM</button>
-      <button class="vb" id="vc-fire"            onclick="setColorMode('fire')">FIRE</button>
-      <button class="vb" id="vc-ice"             onclick="setColorMode('ice')">ICE</button>
-      <button class="vb" id="vc-aurora-c"        onclick="setColorMode('aurora')">AURA</button>
-      <button class="vb" id="vc-palestine"       onclick="setColorMode('palestine')" style="border-color:#009736">&#127477;&#127480;</button>
-      <button class="vb" id="vc-rand"            onclick="setColorMode('rand')">RAND</button>
-    </div>
-  </div>
-</div>
 
-<!-- CHROME (z:60, hidden in VIZ via JS) -->
-<div id="chrome" style="position:absolute;top:0;left:0;width:1228px;height:952px;pointer-events:none;z-index:60">
-  <div class="nav-btn active" id="navHome"  style="top:249px;height:139px" onclick="setMode('home')">
-    <span class="nav-icon">&#127968;</span><span class="nav-label">HOME</span>
-  </div>
-  <div class="nav-btn" id="navLocal" style="top:388px;height:139px" onclick="setMode('local')">
-    <span class="nav-icon">&#128194;</span><span class="nav-label">LOCAL</span>
-  </div>
-  <div class="nav-btn" id="navRadio" style="top:527px;height:138px" onclick="setMode('radio')">
-    <span class="nav-icon">&#127760;</span><span class="nav-label">RADIO</span>
-  </div>
-  <div class="nav-btn" id="navViz"   style="top:667px;height:138px" onclick="setMode('viz')">
-    <span class="nav-icon">&#128065;</span><span class="nav-label">VISUALIZER</span>
-  </div>
-  <!-- Style buttons: user-designed PNGs, active gets bloom -->
-  <img id="sbElectric" class="style-btn-png" src="SAMA PARTS/CROPS/BTN-ELECTRIC.png"
-    style="position:absolute;left:555px;top:79px;width:159px;height:39px" onclick="setTheme('electric')">
-  <img id="sbEmerald"  class="style-btn-png" src="SAMA PARTS/CROPS/BTN-EMERALD.png"
-    style="position:absolute;left:710px;top:79px;width:159px;height:39px" onclick="setTheme('emerald')">
-  <img id="sbAmber"    class="style-btn-png" src="SAMA PARTS/CROPS/BTN-AMBER.png"
-    style="position:absolute;left:866px;top:79px;width:159px;height:39px" onclick="setTheme('amber')">
-  <img id="sbPal"      class="style-btn-png" src="SAMA PARTS/CROPS/BTN-PALESTINE-NEW.png"
-    style="position:absolute;left:1029px;top:79px;width:159px;height:39px" onclick="setTheme('palestine')">
-  <div id="wifiWrap">
-    <img id="wifiOn"  src="SAMA PARTS/CROPS/WIFI-ON-AMBER.png" width="39" height="32">
-    <img id="wifiOff" src="SAMA PARTS/CROPS/WIFI-OFF.png"      width="39" height="32" style="display:none">
-  </div>
-  <img class="dot-btn" id="dotGreen" src="SAMA PARTS/CROPS/DOT-GREEN.png" width="23" height="24" onclick="doMaximize()">
-  <img class="dot-btn" id="dotAmber" src="SAMA PARTS/CROPS/DOT-AMBER.png" width="24" height="24" onclick="doMinimize()">
-  <img class="dot-btn" id="dotRed"   src="SAMA PARTS/CROPS/DOT-RED.png"   width="24" height="24" onclick="doClose()">
-</div>
+    <!-- LOCAL -->
+    <div id="localPanel" class="mode-panel hidden local-layout">
+      <div class="actions">
+        <button class="file-btn" onclick="openFile()"><svg viewBox="0 0 24 24"><path d="M13 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10z"/><path d="M13 3v7h7"/></svg>Load File</button>
+        <button class="file-btn" onclick="openFolder()"><svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>Load Folder</button>
+        <button class="file-btn" onclick="createPlaylist()"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Create Playlist</button>
+        <button class="file-btn" onclick="loadSavedPlaylist()"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Load Playlist</button>
+      </div>
+
+      <!-- Three columns so everything fits one screen: tracks | ring | art+saved.
+           The lists scroll internally rather than the page growing. -->
+      <div class="local-body">
+        <div class="glass local-panel">
+          <div class="local-panel-hdr"><span>Tracks</span><span id="localTrackCount" class="lcd">0</span></div>
+          <div id="localPlaylist"></div>
+        </div>
+
+        <div class="stage local-stage">
+          <canvas id="localRing" class="ring" width="560" height="560"></canvas>
+        </div>
+
+        <div class="local-side">
+          <div id="albumArt"><img id="albumArtImg" src="" alt=""><span>No Art</span></div>
+          <div class="glass local-panel">
+            <div class="local-panel-hdr"><span>Saved Playlists</span><span id="savedCount" class="lcd">0</span></div>
+            <div id="savedPlaylistList"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RADIO -->
+    <div id="radioPanel" class="mode-panel hidden">
+      <div id="radioNowPlaying">
+        <span id="rnpChannel" class="lcd">-- SELECT A STATION --</span>
+        <span id="rnpBitrate" class="mono">STREAMING</span>
+      </div>
+
+      <div class="h"><span>Presets</span><b>10 Slots</b></div>
+      <div class="presets">
+        <button class="pre" id="rPreset0" onclick="clickPreset(0)"><b>1</b></button>
+        <button class="pre" id="rPreset1" onclick="clickPreset(1)"><b>2</b></button>
+        <button class="pre" id="rPreset2" onclick="clickPreset(2)"><b>3</b></button>
+        <button class="pre" id="rPreset3" onclick="clickPreset(3)"><b>4</b></button>
+        <button class="pre" id="rPreset4" onclick="clickPreset(4)"><b>5</b></button>
+        <button class="pre" id="rPreset5" onclick="clickPreset(5)"><b>6</b></button>
+        <button class="pre" id="rPreset6" onclick="clickPreset(6)"><b>7</b></button>
+        <button class="pre" id="rPreset7" onclick="clickPreset(7)"><b>8</b></button>
+        <button class="pre" id="rPreset8" onclick="clickPreset(8)"><b>9</b></button>
+        <button class="pre" id="rPreset9" onclick="clickPreset(9)"><b>10</b></button>
+      </div>
+
+      <div class="tuner">
+        <select id="radioTag" class="glass-select">
+          <option value="">ALL GENRES</option>
+          <option value="jazz">JAZZ</option><option value="electronic">ELECTRONIC</option>
+          <option value="trance">TRANCE</option><option value="house">HOUSE</option>
+          <option value="ambient">AMBIENT</option><option value="classical">CLASSICAL</option>
+          <option value="synthwave">SYNTHWAVE</option><option value="rock">ROCK</option>
+          <option value="metal">METAL</option><option value="blues">BLUES</option>
+          <option value="hip-hop">HIP HOP</option><option value="pop">POP</option>
+          <option value="k-pop">K-POP</option><option value="anime">ANIME</option>
+          <option value="persian">PERSIAN</option><option value="lofi">LO-FI</option>
+          <option value="country">COUNTRY</option><option value="news">NEWS</option>
+          <option value="talk">TALK</option>
+        </select>
+        <input id="radioQ" class="glass-input" type="text" placeholder="Station name…">
+        <button class="btn pri" onclick="scanRadio()">Scan</button>
+        <button class="btn" onclick="scanRandom()">Random</button>
+      </div>
+
+      <div class="act-row">
+        <button class="btn" onclick="selectHighlighted()" title="Play the highlighted station">▶ Select</button>
+        <button class="btn" onclick="toggleFavHighlighted()" title="Save / unsave the highlighted station">★ Favorite</button>
+      </div>
+
+      <!-- Custom stream: paste any direct stream URL, play it, keep it -->
+      <div class="glass custom-panel">
+        <div class="local-panel-hdr">
+          <span>Custom Stream</span><span id="customCount" class="lcd">0</span>
+        </div>
+        <div class="custom-row">
+          <input id="customName" class="glass-input" type="text" placeholder="Name (optional)">
+          <input id="customUrl"  class="glass-input" type="url"  placeholder="https://… direct stream URL">
+          <button class="btn pri" onclick="playCustomStream()">Play</button>
+          <button class="btn"     onclick="saveCustomStream()">Save</button>
+        </div>
+        <div id="customList"></div>
+      </div>
+
+      <!-- Stations take three quarters; the ring sits centred in the remaining
+           quarter instead of being stranded below the list. -->
+      <div class="radio-cols">
+        <div class="glass" style="padding:16px">
+          <div class="h"><span>Stations</span></div>
+          <div id="stationScroll"><div class="st-msg">Press scan to load stations</div></div>
+        </div>
+        <div class="stage">
+          <canvas id="radioRing" class="ring" width="560" height="560"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIZ — goes fullscreen; engine reparents this to <body> -->
+    <div id="vizPanel" class="mode-panel hidden">
+      <canvas id="vizCanvas" width="1228" height="952"></canvas>
+      <div id="vizOverlay">
+        <div id="vizTransport">
+          <button class="tb play" onclick="togglePlay()" title="Play / Pause">
+            <svg id="vizBtnPlay"  viewBox="0 0 24 24"><path d="M6 4v16l14-8z"/></svg>
+            <svg id="vizBtnPause" viewBox="0 0 24 24" style="display:none"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
+          </button>
+          <button class="tb" onclick="stopAll()" title="Stop"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg></button>
+          <div id="vizVolWrap">
+            <span>Vol</span>
+            <input type="range" id="vizVolMirror" min="0" max="100" value="80"
+              oninput="document.getElementById('vizVol').value=this.value;document.getElementById('vizVol').dispatchEvent(new Event('input'))">
+          </div>
+        </div>
+        <div id="vizPresets">
+          <button class="vb active" id="vp-geometric" onclick="setVizMode('geometric')">GEOM</button>
+          <button class="vb" id="vp-spectrum"    onclick="setVizMode('spectrum')">SPEC</button>
+          <button class="vb" id="vp-oscp"        onclick="setVizMode('oscp')">OSCP</button>
+          <button class="vb" id="vp-liss"        onclick="setVizMode('liss')">LISS</button>
+          <button class="vb" id="vp-spct"        onclick="setVizMode('spct')">SPCT</button>
+          <button class="vb" id="vp-radial"      onclick="setVizMode('radial')">RADL</button>
+          <button class="vb" id="vp-mirror"      onclick="setVizMode('mirror')">MIRR</button>
+          <button class="vb" id="vp-plasma"      onclick="setVizMode('plasma')">PLSM</button>
+          <button class="vb" id="vp-nova"        onclick="setVizMode('nova')">NOVA</button>
+          <button class="vb" id="vp-nebula"      onclick="setVizMode('nebula')">NEBL</button>
+          <button class="vb" id="vp-synapse"     onclick="setVizMode('synapse')">SYN</button>
+          <button class="vb" id="vp-hypercube"   onclick="setVizMode('hypercube')">HCUB</button>
+          <button class="vb" id="vp-tunnel"      onclick="setVizMode('tunnel')">TUNL</button>
+          <button class="vb" id="vp-singularity" onclick="setVizMode('singularity')">SNGL</button>
+          <button class="vb" id="vp-chronos"     onclick="setVizMode('chronos')">CHRO</button>
+          <button class="vb" id="vp-hyperspace"  onclick="setVizMode('hyperspace')">HYPR</button>
+          <button class="vb" id="vp-quantum"     onclick="setVizMode('quantum')">QNTM</button>
+          <button class="vb" id="vp-strata"      onclick="setVizMode('strata')">STRATA</button>
+          <button class="vb" id="vp-aurora"      onclick="setVizMode('aurora')">AURORA</button>
+          <button class="vb" id="vp-pulse"       onclick="setVizMode('pulse')">PULSE</button>
+          <button class="vb" id="vp-ocean"       onclick="setVizMode('ocean')">OCEAN</button>
+          <button class="vb" id="vp-spacecat"    onclick="setVizMode('spacecat')">SPCCAT</button>
+          <button class="vb" id="vp-mosaic"      onclick="setVizMode('mosaic')">ENDLESS</button>
+          <button class="vb" id="vp-random"      onclick="setVizMode('random')">RND</button>
+          <button class="vb" style="border-color:#aa0000;color:#ff4444;margin-left:12px" onclick="setMode('home')">&#10005; EXIT</button>
+        </div>
+        <div id="vizColors">
+          <button class="vb active" id="vc-drift" onclick="setColorMode('drift')">DRIFT</button>
+          <button class="vb" id="vc-bloom"     onclick="setColorMode('bloom')">BLOOM</button>
+          <button class="vb" id="vc-prism"     onclick="setColorMode('prism')">PRISM</button>
+          <button class="vb" id="vc-fire"      onclick="setColorMode('fire')">FIRE</button>
+          <button class="vb" id="vc-ice"       onclick="setColorMode('ice')">LAVENDER</button>
+          <button class="vb" id="vc-aurora"    onclick="setColorMode('aurora')">EMERALD</button>
+          <button class="vb" id="vc-palestine" onclick="setColorMode('palestine')" style="border-color:#009736">&#127477;&#127480;</button>
+          <button class="vb" id="vc-rand"      onclick="setColorMode('rand')">RAND</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div><!-- /#app -->
+</div><!-- /#sama -->
 
 <script>
-// SAMA v1.0.1 — AGW Entertainment
+// SAMA v1.0.2 — AGW Entertainment
 // © AGW Entertainment. All rights reserved.
 const sama=document.getElementById('sama'),chromeEl=document.getElementById('chrome');
-function scaleUI(){const s=Math.min(window.innerWidth/1228,window.innerHeight/952,1);sama.style.transform=`scale(${s})`;sama.style.marginLeft=((window.innerWidth-1228*s)/2)+'px';sama.style.marginTop=((window.innerHeight-952*s)/2)+'px';}
+// Layout is fluid CSS grid now — nothing to transform-scale. Kept as a no-op
+// because main.js and the resize handler below still call it.
+function scaleUI(){}
 window.addEventListener('resize',()=>{scaleUI();if(currentMode==='viz')resizeViz();});scaleUI();
 
 const THEMES={
@@ -655,7 +967,13 @@ function createPlaylist(){if(!playlist.length){alert('No tracks loaded.');return
 function loadSavedPlaylist(){const s=JSON.parse(localStorage.getItem('sama_playlists')||'{}');const ns=Object.keys(s);if(!ns.length){alert('No saved playlists.');return;}const n=prompt('Playlists:\n'+ns.map((v,i)=>i+1+'. '+v).join('\n')+'\n\nEnter name:');if(!n||!s[n.trim()]){if(n)alert('Not found.');return;}alert(`"${n.trim()}" — ${s[n.trim()].length} tracks. Re-add files to play.`);}
 
 function renderSavedPlaylists(){const el=document.getElementById('savedPlaylistList');const cnt=document.getElementById('savedCount');const s=JSON.parse(localStorage.getItem('sama_playlists')||'{}');const ns=Object.keys(s);if(cnt)cnt.textContent=ns.length;if(!el)return;if(!ns.length){el.innerHTML='<div style="padding:10px 12px;font-family:Rajdhani,sans-serif;font-size:10px;letter-spacing:2px;color:rgba(255,255,255,.2);text-transform:uppercase">NO SAVED PLAYLISTS</div>';return;}el.innerHTML='';ns.forEach(n=>{const d=document.createElement('div');d.className='sp-row';const trk=document.createElement('span');trk.style.cssText='font-size:9px;opacity:.4';trk.textContent=s[n].length+' TRK';d.append(document.createTextNode(n.slice(0,22)),trk);d.onclick=()=>{alert('"'+n+'" — '+s[n].length+' tracks.\nRe-load the audio files to play them.');};el.appendChild(d);});}
-function renderPlaylist(){const el=document.getElementById('localPlaylist');const cnt=document.getElementById('localTrackCount');if(cnt)cnt.textContent=playlist.length;if(!playlist.length){el.innerHTML='';return;}el.innerHTML='';playlist.forEach((item,i)=>{const d=document.createElement('div');d.className='pl-row'+(i===curIdx?' active':'');const{artist,title}=parseTrack(item.name);const disp=artist?artist+' — '+title:title;const ext=item.name.split('.').pop().toUpperCase();d.innerHTML=`<span style="flex:1;overflow:hidden;text-overflow:ellipsis" onclick="loadTrack(${i});audioEl.play().catch(()=>{})">${disp.slice(0,44)}</span><span style="font-size:7px;opacity:.4;margin:0 5px">${ext}</span>`;const rm=document.createElement('button');rm.className='pl-rm';rm.textContent='✕';rm.onclick=e=>{e.stopPropagation();if(playlist[i])URL.revokeObjectURL(playlist[i].url);playlist.splice(i,1);if(curIdx>=i)curIdx--;renderPlaylist();};d.appendChild(rm);el.appendChild(d);});}
+function renderPlaylist(){const el=document.getElementById('localPlaylist');const cnt=document.getElementById('localTrackCount');if(cnt)cnt.textContent=playlist.length;if(!playlist.length){el.innerHTML='';return;}el.innerHTML='';playlist.forEach((item,i)=>{const d=document.createElement('div');d.className='pl-row'+(i===curIdx?' active':'');const{artist,title}=parseTrack(item.name);const disp=artist?artist+' — '+title:title;const ext=item.name.split('.').pop().toUpperCase();/* SECURITY: same treatment as station rows — a crafted FILENAME would
+   otherwise be parsed as markup here. Text nodes + a real listener. */
+const tEl=document.createElement('span');tEl.style.cssText='flex:1;overflow:hidden;text-overflow:ellipsis;cursor:pointer';
+tEl.textContent=disp.slice(0,44);
+tEl.addEventListener('click',()=>{loadTrack(i);audioEl.play().catch(()=>{});});
+const xEl=document.createElement('span');xEl.style.cssText='font-size:7px;opacity:.4;margin:0 5px';xEl.textContent=ext;
+d.append(tEl,xEl);const rm=document.createElement('button');rm.className='pl-rm';rm.textContent='✕';rm.onclick=e=>{e.stopPropagation();if(playlist[i])URL.revokeObjectURL(playlist[i].url);playlist.splice(i,1);if(curIdx>=i)curIdx--;renderPlaylist();};d.appendChild(rm);el.appendChild(d);});}
 
 async function loadTrack(idx){if(idx<0||idx>=playlist.length)return;curIdx=idx;const trk=playlist[idx];stopAll(true);fileType=trk.type;const{artist,title}=parseTrack(trk.name);setTI(artist,title,'','FILE');readAlbumArt(trk);if(trk.type==='midi'){showAlbumArt(null);if(trk.file)await loadMidi(trk.file);else try{const r=await fetch(trk.url);await loadMidiBuf(await r.arrayBuffer());}catch(e){}}else{audioEl.src=trk.url;audioEl.load();ensureAudioCtx();resumeCtx();}audioMode='local';updateHomeTransport();renderPlaylist();}
 async function loadMidiBuf(buf){midiActiveNotes=[];if(typeof MidiPlayer==='undefined')return;if(midiInst){try{midiInst.stop();}catch(e){}}midiInst=null;try{if(!sfAC)sfAC=new(window.AudioContext||window.webkitAudioContext)();midiInst=new MidiPlayer.Player(async evt=>{if(evt.name==='Note on'&&evt.velocity>0){midiActiveNotes.push({note:evt.noteNumber,vel:evt.velocity,life:1.0});if(typeof Soundfont!=='undefined'){try{if(!sfPlayer)sfPlayer=await Soundfont.instrument(sfAC,'acoustic_grand_piano',{soundfont:'MusyngKite'});sfPlayer.play(evt.noteNumber,sfAC.currentTime,{duration:0.6,gain:evt.velocity/127});}catch(e){}}}});midiInst.loadArrayBuffer(buf);}catch(e){}}
@@ -672,10 +990,23 @@ function onSeek(e){if(!audioEl.duration||fileType==='midi')return;const r=docume
 
 // RADIO
 const RADIO_SERVERS=['https://de1.api.radio-browser.info','https://at1.api.radio-browser.info','https://nl1.api.radio-browser.info'];
-let radioPresets=JSON.parse(localStorage.getItem('sama_radio_presets')||'null')||Array(5).fill(null),stationCache=[],highlightedStation=null;
+// 10 preset slots. Older builds stored 5, so pad rather than discard — saved
+// favourites survive the upgrade and land in the same slots they were in.
+const PRESET_SLOTS=10;
+let radioPresets=(()=>{const s=JSON.parse(localStorage.getItem('sama_radio_presets')||'null');
+  const a=Array.isArray(s)?s.slice(0,PRESET_SLOTS):[];
+  while(a.length<PRESET_SLOTS)a.push(null);
+  return a;})(),stationCache=[],highlightedStation=null;
 async function scanRadio(){const name=document.getElementById('radioQ').value.trim(),tag=document.getElementById('radioTag').value;document.getElementById('stationScroll').innerHTML='<div class="st-msg">SCANNING...</div>';const p=new URLSearchParams({limit:80,hidebroken:true,order:'votes',reverse:true});if(name)p.set('name',name);if(tag)p.set('tag',tag);let st=[];for(const srv of RADIO_SERVERS){try{const r=await fetch(`${srv}/json/stations/search?${p}`,{headers:{'User-Agent':'SAMAPlayer/3.1'}});if(r.ok){st=await r.json();break;}}catch(e){}}if(!st.length){document.getElementById('stationScroll').innerHTML='<div class="st-msg">NO STATIONS FOUND</div>';return;}stationCache=st;renderStations(st);}
 async function scanRandom(){const tags=['jazz','electronic','trance','house','ambient','classical','synthwave','rock','metal','blues','hip-hop','pop','k-pop','anime','persian','lofi','country'];document.getElementById('radioTag').value=tags[Math.floor(Math.random()*tags.length)];scanRadio();}
-function renderStations(list){const el=document.getElementById('stationScroll');const sc=el.scrollTop;el.innerHTML='';list.slice(0,80).forEach((st,i)=>{const d=document.createElement('div');const isCur=currentStation&&currentStation.stationuuid===st.stationuuid;const isHi=highlightedStation&&highlightedStation.stationuuid===st.stationuuid;d.className='station-row'+(isCur?' active':'')+(isHi?' highlight':'');const nm=(st.name||'?').trim().slice(0,30).toUpperCase(),br=st.bitrate?st.bitrate+'k':'';d.innerHTML=`<span style="flex:1;overflow:hidden;text-overflow:ellipsis">${nm}</span><span class="st-br">${br}</span>`;const fav=document.createElement('button');const faved=isFav(st);fav.className='st-fav'+(faved?' on':'');fav.textContent=faved?'★':'☆';fav.title=faved?'Unfavorite':'Favorite';fav.onclick=e=>{e.stopPropagation();toggleFavorite(stationCache[i]);};d.appendChild(fav);d.onclick=()=>highlightStation(stationCache[i]);el.appendChild(d);});el.scrollTop=sc;}
+function renderStations(list){const el=document.getElementById('stationScroll');const sc=el.scrollTop;el.innerHTML='';list.slice(0,80).forEach((st,i)=>{const d=document.createElement('div');const isCur=currentStation&&currentStation.stationuuid===st.stationuuid;const isHi=highlightedStation&&highlightedStation.stationuuid===st.stationuuid;d.className='station-row'+(isCur?' active':'')+(isHi?' highlight':'');const nm=(st.name||'?').trim().slice(0,30).toUpperCase(),br=st.bitrate?st.bitrate+'k':'';
+/* SECURITY: station names come from the public, community-editable
+   radio-browser database — treat as hostile. Built as text nodes, never
+   innerHTML; the old template literal let a crafted name inject live markup
+   (e.g. <IFRAME SRC=//host> fits inside the 30-char truncation). */
+const nmEl=document.createElement('span');nmEl.style.cssText='flex:1;overflow:hidden;text-overflow:ellipsis';nmEl.textContent=nm;
+const brEl=document.createElement('span');brEl.className='st-br';brEl.textContent=br;
+d.append(nmEl,brEl);const fav=document.createElement('button');const faved=isFav(st);fav.className='st-fav'+(faved?' on':'');fav.textContent=faved?'★':'☆';fav.title=faved?'Unfavorite':'Favorite';fav.onclick=e=>{e.stopPropagation();toggleFavorite(stationCache[i]);};d.appendChild(fav);d.onclick=()=>highlightStation(stationCache[i]);el.appendChild(d);});el.scrollTop=sc;}
 function isFav(st){return !!(st&&radioPresets.some(p=>p&&p.stationuuid===st.stationuuid));}
 function toggleFavorite(st){if(!st)return;const idx=radioPresets.findIndex(p=>p&&p.stationuuid===st.stationuuid);if(idx>-1){radioPresets[idx]=null;localStorage.setItem('sama_radio_presets',JSON.stringify(radioPresets));renderPresetsUI();}else{savePreset(st);}renderStations(stationCache);}
 function highlightStation(st){highlightedStation=st;renderStations(stationCache);}
@@ -683,7 +1014,7 @@ function selectHighlighted(){if(highlightedStation){playStation(highlightedStati
 function toggleFavHighlighted(){const st=highlightedStation||currentStation;if(st)toggleFavorite(st);}
 function playStation(st){if(!st)return;stopAll(true);currentStation=st;fileType='audio';audioMode='radio';setCI(st.name,st.bitrate);ensureAudioCtx();resumeCtx();audioEl.src=st.url_resolved||st.url;audioEl.play().then(()=>setPlayState(true)).catch(()=>{if(st.url){audioEl.src=st.url;audioEl.play().then(()=>setPlayState(true)).catch(()=>{});}});checkWifi();updateHomeTransport();renderPresetsUI();}
 function clickPreset(i){const pp=radioPresets[i];if(pp){setMode('radio');playStation(pp);}}
-function renderPresetsUI(){for(let i=0;i<5;i++){const el=document.getElementById('rPreset'+i);if(!el)continue;const pp=radioPresets[i];el.classList.toggle('loaded',!!pp);el.classList.toggle('playing',!!(currentStation&&pp&&currentStation.stationuuid===pp.stationuuid));el.title=pp?(pp.name||''):'Empty — long-press to save';el.oncontextmenu=e=>{e.preventDefault();if(pp&&confirm(`Clear preset ${i+1}?`)){radioPresets[i]=null;localStorage.setItem('sama_radio_presets',JSON.stringify(radioPresets));renderPresetsUI();}};}}
+function renderPresetsUI(){for(let i=0;i<PRESET_SLOTS;i++){const el=document.getElementById('rPreset'+i);if(!el)continue;const pp=radioPresets[i];el.classList.toggle('loaded',!!pp);el.classList.toggle('playing',!!(currentStation&&pp&&currentStation.stationuuid===pp.stationuuid));el.title=pp?(pp.name||''):'Empty — long-press to save';el.oncontextmenu=e=>{e.preventDefault();if(pp&&confirm(`Clear preset ${i+1}?`)){radioPresets[i]=null;localStorage.setItem('sama_radio_presets',JSON.stringify(radioPresets));renderPresetsUI();}};}}
 function savePreset(st){if(!st)return;let slot=radioPresets.findIndex(p=>p===null);if(slot===-1)slot=0;radioPresets[slot]=st;localStorage.setItem('sama_radio_presets',JSON.stringify(radioPresets));renderPresetsUI();}
 function saveCurrentPreset(){if(currentStation)savePreset(currentStation);}
 renderPresetsUI();
@@ -777,8 +1108,14 @@ const vizCv=document.getElementById('vizCanvas'),vizCx=vizCv.getContext('2d');
 let vizMode='geometric',colorMode='drift',vizActive=false,vizAnimId=null;
 let colorHue=0,beatHue=0,prevBass=0,randColorHue=0,randColorTarget=Math.random()*360;
 const FIRE_P=[[255,140,0],[255,160,0],[255,120,0],[255,180,0],[255,200,30]];
-const ICE_P=[[0,100,255],[0,200,255],[100,220,255],[180,240,255],[220,255,255]];
-const AURORA_P=[[0,255,150],[0,150,255],[150,0,255],[255,0,200],[0,255,255]];
+// Was ICE (blues) — now the LAVENDER ramp, matching the Lavender style accent
+// (#c4a9ff). Internal key stays 'ice' so setColorMode/vc-ice keep resolving.
+const ICE_P=[[124,92,214],[152,120,240],[178,150,250],[204,182,255],[230,218,255]];
+// Was the aurora rainbow (green→blue→violet→magenta→cyan), which is why the
+// button reading EMERALD painted anything but. Now a true green ramp centred on
+// the Emerald style accent #00ff66. Internal key stays 'aurora' so
+// setColorMode('aurora') and #vc-aurora keep resolving.
+const AURORA_P=[[0,140,70],[0,190,90],[0,255,102],[90,255,150],[190,255,215]];
 const PAL_P=[[204,0,0],[204,0,0],[240,240,240],[0,151,54],[204,0,0],[204,0,0],[240,240,240],[0,151,54]];
 const VIZ_POOL=['geometric','spectrum','oscp','liss','spct','radial','mirror','plasma','nova','nebula','synapse','hypercube','tunnel','singularity','chronos','hyperspace','quantum','strata','aurora','pulse','ocean','spacecat','mosaic'];
 let rndTimer=0,rndInterval=380,rndPrevBass=0;
@@ -793,7 +1130,11 @@ function hslToRgb(h,s,l){const a=s*Math.min(l,1-l);const f=n=>{const k=(n+h/30)%
 function getFFT(){const fft=new Uint8Array(analyser?analyser.frequencyBinCount:1024),time=new Uint8Array(analyser?analyser.frequencyBinCount:1024);if(analyser){analyser.getByteFrequencyData(fft);analyser.getByteTimeDomainData(time);}return{fft,time};}
 function tickRandom(fft){if(vizMode!=='random')return;const bass=fft?fftAvg(fft,0,8)/255:0;rndTimer++;if(rndTimer>rndInterval||(bass>.72&&rndPrevBass<.5)){rndTimer=0;rndInterval=200+Math.floor(Math.random()*400);const cur=vizCv._activeMode||'geometric';let next;do{next=VIZ_POOL[Math.floor(Math.random()*VIZ_POOL.length)];}while(next===cur&&VIZ_POOL.length>1);vizCv._activeMode=next;}rndPrevBass=bass;}
 function setVizMode(m){vizMode=m;document.querySelectorAll('.vb[id^="vp-"]').forEach(b=>b.classList.toggle('active',b.id==='vp-'+m));}
-function setColorMode(m){if(currentTheme==='palestine'&&vizMode==='plasma')return;colorMode=m;document.querySelectorAll('.vb[id^="vc-"]').forEach(b=>b.classList.toggle('active',b.id==='vc-'+m));}
+// Previously refused every colour change while Palestine style + PLSM were
+// selected, which silently locked the visualizer to the flag. Colour modes are
+// now always selectable; PLSM still defaults to the flag in Palestine style
+// (see isPalFlag in drawPlasma) but any other choice now takes effect.
+function setColorMode(m){colorMode=m;document.querySelectorAll('.vb[id^="vc-"]').forEach(b=>b.classList.toggle('active',b.id==='vc-'+m));}
 function resizeViz(){vizCv.width=window.innerWidth;vizCv.height=window.innerHeight;}
 function startViz(){resizeViz();if(vizAnimId)cancelAnimationFrame(vizAnimId);function frame(){vizAnimId=requestAnimationFrame(frame);if(!vizActive)return;const W=vizCv.width,H=vizCv.height,{fft,time}=getFFT();tickRandom(fft);const am=vizMode==='random'?(vizCv._activeMode||'geometric'):vizMode;
     // col for ALL presets: respects colorMode; theme falls back to LCD/Palestine red
@@ -843,9 +1184,23 @@ function getPalestineColor(px,py,W,H){
   if(py<2*H/3)return{r:240,g:240,b:240}; // white
   return{r:0,g:151,b:54};              // green
 }
+/* Trans pride flag — five equal horizontal stripes, light blue / pink / white
+   / pink / light blue. Same signature as getPalestineColor so drawPlasma can
+   swap between them per point. Shown when the LAVENDER colour preset is
+   active (internal key 'ice'). */
+function getTransColor(px,py,W,H){
+  const band=Math.floor((py/H)*5);
+  if(band<=0||band>=4)return{r:91,g:206,b:250};   // light blue
+  if(band===1||band===3)return{r:245,g:169,b:184};// pink
+  return{r:245,g:245,b:245};                      // white
+}
 let plasmaT=0;function drawPlasma(W,H,fft,time){const bass=fftAvg(fft,0,8)/255,mid=fftAvg(fft,8,80)/255,high=fftAvg(fft,80,200)/255;plasmaT+=.022+bass*.055;
-  vizCx.fillStyle=`rgba(0,0,0,${.16+bass*.08})`;vizCx.fillRect(0,0,W,H);const cols=44,rows=25,cw=W/cols,ch=H/rows,pts=[];for(let r=0;r<=rows;r++){pts[r]=[];for(let c=0;c<=cols;c++){const fi=Math.floor(((c+r*(cols+1))/((cols+1)*(rows+1)))*fft.length),v=fft[fi]/255,wx=Math.sin(r*.4+plasmaT*1.1)*cw*.6+Math.sin(c*.3+plasmaT*.7)*cw*.3+Math.sin((c+r)*.25+plasmaT*.5)*cw*.2,wy=Math.cos(c*.4+plasmaT*.9)*ch*.7+Math.cos(r*.35+plasmaT*1.3)*ch*.35+Math.sin((c-r)*.2+plasmaT*.8)*ch*.25,ad=v*cw*1.4,sx=c*cw+wx+Math.sin(plasmaT*.6+c*.5)*ad*.5,sy=r*ch+wy+Math.cos(plasmaT*.8+r*.5)*ad*.5,br=.4+v*.6+Math.abs(Math.sin(plasmaT+c*.2+r*.3))*.2;pts[r][c]={sx,sy,v,br};}}const isPalFlag=currentTheme==='palestine'||colorMode==='palestine';
-for(let r=0;r<=rows;r++){for(let c=0;c<=cols;c++){const p=pts[r][c],rgb=isPalFlag?getPalestineColor(p.sx,p.sy,W,H):resolveColor(fft,c+r*(cols+1),(cols+1)*(rows+1));if(c<cols){const p2=pts[r][c+1],a=Math.min(.85,(p.v+p2.v)*.8*p.br);vizCx.globalAlpha=a;vizCx.strokeStyle=rgbStr(rgb,1);vizCx.lineWidth=.6+p.v*1.2;vizCx.beginPath();vizCx.moveTo(p.sx,p.sy);vizCx.lineTo(p2.sx,p2.sy);vizCx.stroke();}if(r<rows){const p3=pts[r+1][c],a=Math.min(.85,(p.v+p3.v)*.8*p.br);vizCx.globalAlpha=a;vizCx.strokeStyle=rgbStr(rgb,1);vizCx.lineWidth=.6+p.v*1.2;vizCx.beginPath();vizCx.moveTo(p.sx,p.sy);vizCx.lineTo(p3.sx,p3.sy);vizCx.stroke();}}}for(let r=0;r<=rows;r++){for(let c=0;c<=cols;c++){const p=pts[r][c],rgb=isPalFlag?getPalestineColor(p.sx,p.sy,W,H):resolveColor(fft,c+r*(cols+1),(cols+1)*(rows+1)),ptS=Math.max(.8,(p.v*5+mid*2+high)*p.br);vizCx.globalAlpha=Math.min(1,p.br*(.6+p.v*.8));vizCx.fillStyle=rgbStr(rgb,1);vizCx.beginPath();vizCx.arc(p.sx,p.sy,ptS*.7,0,Math.PI*2);vizCx.fill();}}vizCx.globalAlpha=1;}
+  vizCx.fillStyle=`rgba(0,0,0,${.16+bass*.08})`;vizCx.fillRect(0,0,W,H);const cols=44,rows=25,cw=W/cols,ch=H/rows,pts=[];for(let r=0;r<=rows;r++){pts[r]=[];for(let c=0;c<=cols;c++){const fi=Math.floor(((c+r*(cols+1))/((cols+1)*(rows+1)))*fft.length*0.45),v=fft[fi]/255,wx=Math.sin(r*.4+plasmaT*1.1)*cw*.6+Math.sin(c*.3+plasmaT*.7)*cw*.3+Math.sin((c+r)*.25+plasmaT*.5)*cw*.2,wy=Math.cos(c*.4+plasmaT*.9)*ch*.7+Math.cos(r*.35+plasmaT*1.3)*ch*.35+Math.sin((c-r)*.2+plasmaT*.8)*ch*.25,ad=v*cw*1.4,sx=c*cw+wx+Math.sin(plasmaT*.6+c*.5)*ad*.5,sy=r*ch+wy+Math.cos(plasmaT*.8+r*.5)*ad*.5,br=.4+v*.6+Math.abs(Math.sin(plasmaT+c*.2+r*.3))*.2;pts[r][c]={sx,sy,v,br};}}/* Flag shows when it is explicitly chosen (🇵🇸 button), or when the colour mode
+   is 'theme' — i.e. "use the style's own colours" — while in Palestine style.
+   Any other colour selection now wins over the style, which is what frees the
+   picker up. Previously currentTheme alone forced the flag and overrode it. */
+const isPalFlag=colorMode==='palestine'||(currentTheme==='palestine'&&colorMode==='theme');const isTransFlag=!isPalFlag&&colorMode==='ice';
+for(let r=0;r<=rows;r++){for(let c=0;c<=cols;c++){const p=pts[r][c],rgb=isPalFlag?getPalestineColor(p.sx,p.sy,W,H):isTransFlag?getTransColor(p.sx,p.sy,W,H):resolveColor(fft,c+r*(cols+1),(cols+1)*(rows+1));if(c<cols){const p2=pts[r][c+1],a=Math.min(.85,(p.v+p2.v)*.8*p.br);vizCx.globalAlpha=a;vizCx.strokeStyle=rgbStr(rgb,1);vizCx.lineWidth=.6+p.v*1.2;vizCx.beginPath();vizCx.moveTo(p.sx,p.sy);vizCx.lineTo(p2.sx,p2.sy);vizCx.stroke();}if(r<rows){const p3=pts[r+1][c],a=Math.min(.85,(p.v+p3.v)*.8*p.br);vizCx.globalAlpha=a;vizCx.strokeStyle=rgbStr(rgb,1);vizCx.lineWidth=.6+p.v*1.2;vizCx.beginPath();vizCx.moveTo(p.sx,p.sy);vizCx.lineTo(p3.sx,p3.sy);vizCx.stroke();}}}for(let r=0;r<=rows;r++){for(let c=0;c<=cols;c++){const p=pts[r][c],rgb=isPalFlag?getPalestineColor(p.sx,p.sy,W,H):isTransFlag?getTransColor(p.sx,p.sy,W,H):resolveColor(fft,c+r*(cols+1),(cols+1)*(rows+1)),ptS=Math.max(.8,(p.v*5+mid*2+high)*p.br);vizCx.globalAlpha=Math.min(1,p.br*(.6+p.v*.8));vizCx.fillStyle=rgbStr(rgb,1);vizCx.beginPath();vizCx.arc(p.sx,p.sy,ptS*.7,0,Math.PI*2);vizCx.fill();}}vizCx.globalAlpha=1;}
 
 // LUMINA VIZ MODES
 function drawNova(ctx,dim,data,sense,color,glow,wa){
@@ -862,11 +1217,84 @@ function drawNova(ctx,dim,data,sense,color,glow,wa){
 }
 
 function drawStrata(ctx,dim,data,sense,color,glow,wa){const lc=10,sp=dim.height/(lc+1),t=Date.now()*.001;for(let j=0;j<lc;j++){const y=sp*(j+1),rv=data[j*4]*sense,amp=(rv/255)*sp*1.2;ctx.beginPath();ctx.strokeStyle=wa(color,1-j/lc);ctx.lineWidth=2;if(glow&&j<3){ctx.shadowBlur=15;ctx.shadowColor=color;}else ctx.shadowBlur=0;for(let i=0;i<=100;i++){const x=(i/100)*dim.width,n=Math.sin(i*.1+t+j)*amp;if(i===0)ctx.moveTo(x,y+n);else ctx.lineTo(x,y+n);}ctx.stroke();}}
-function drawPulse(ctx,dim,data,sense,color,glow,wa){const cx=dim.width/2,cy=dim.height/2,bass=(data[0]+data[1]+data[2])/3*sense,t=Date.now()*.001;ctx.save();ctx.translate(cx,cy);for(let i=0;i<5;i++){const rt=(t+i*.5)%2.5,r=rt*200,op=Math.max(0,(1-rt/2.5)*.8);ctx.beginPath();ctx.strokeStyle=wa(color,op);ctx.lineWidth=2+(bass/255)*8;ctx.arc(0,0,r,0,Math.PI*2);ctx.stroke();}const cs=50+(bass/255)*100,cg=ctx.createRadialGradient(0,0,0,0,0,cs);cg.addColorStop(0,wa(color,.4));cg.addColorStop(.5,wa(color,.1));cg.addColorStop(1,'transparent');ctx.fillStyle=cg;ctx.beginPath();ctx.arc(0,0,cs,0,Math.PI*2);ctx.fill();ctx.restore();}
+/* PULSE — was five bare ctx.arc circles capped at r=200 with no spectral input
+   at all, which is why it read as flat. Now the wavefronts ripple: each ring is
+   deformed by two LOW harmonics (never per-vertex FFT, which would shred the
+   curve), sized to the actual canvas, with a white leading edge on newborn
+   rings, treble spokes and a bass-driven core. */
+function drawPulse(ctx,dim,data,sense,color,glow,wa){
+  const cx=dim.width/2, cy=dim.height/2, t=Date.now()*.001;
+  const N=data.length||1024;
+  const bass=((data[0]||0)+(data[1]||0)+(data[2]||0))/3*sense/255;
+  const mid =(data[(N/6)|0]||0)*sense/255;
+  const hi  =(data[(N/2)|0]||0)*sense/255;
+  // Was hypot*0.55, which on 1920x1080 sent rings to 1212px — past the 1101px
+  // half-diagonal, so they spent most of their life off-frame.
+  const maxR=Math.min(dim.width,dim.height)*0.78;
+  ctx.save(); ctx.translate(cx,cy);
+
+  const RINGS=8, seg=120;
+  for(let i=0;i<RINGS;i++){
+    const life=(t*0.36 + i/RINGS)%1;            // 0 = just born, 1 = gone
+    const r=life*maxR;
+    if(r<10) continue;
+    const fade=Math.pow(1-life,1.7);
+    const band=(data[((i*37)%N)|0]||0)*sense/255;
+    const lobes=3+(i%5);
+    const amp=r*0.045*(0.4 + band*2.0 + mid*0.8);
+    ctx.beginPath();
+    for(let s=0;s<=seg;s++){
+      const a=s/seg*Math.PI*2;
+      const rr=r + Math.sin(a*lobes + t*(0.8+i*0.17))*amp
+                 + Math.sin(a*lobes*2 - t*0.6)*amp*0.35;
+      const x=Math.cos(a)*rr, y=Math.sin(a)*rr;
+      s?ctx.lineTo(x,y):ctx.moveTo(x,y);
+    }
+    ctx.closePath();
+    ctx.strokeStyle=wa(color, fade*(0.28+bass*0.6));
+    ctx.lineWidth=0.8+(1.2+bass*4)*fade;
+    ctx.shadowBlur=glow?16*fade:0; ctx.shadowColor=color;
+    ctx.stroke();
+    if(life<0.25){                              // bright crest on new waves
+      ctx.strokeStyle=wa('#fff',(0.25-life)*2.2*(0.3+bass));
+      ctx.lineWidth=1.2; ctx.shadowBlur=0; ctx.stroke();
+    }
+  }
+
+  if(hi>0.35){                                  // treble spokes
+    ctx.shadowBlur=0;
+    const S=24;
+    for(let s=0;s<S;s++){
+      const a=(s/S)*Math.PI*2 + t*0.25;
+      const k=(data[(((s/S)*N*0.6)|0)]||0)*sense/255;
+      if(k<0.25) continue;
+      const r0=maxR*0.08, r1=r0+k*maxR*0.34;
+      ctx.beginPath();
+      ctx.strokeStyle=wa(color,k*0.38*hi);
+      ctx.lineWidth=0.8+k*1.6;
+      ctx.moveTo(Math.cos(a)*r0,Math.sin(a)*r0);
+      ctx.lineTo(Math.cos(a)*r1,Math.sin(a)*r1);
+      ctx.stroke();
+    }
+  }
+
+  /* Core, deliberately small. At the old size its glow reached 1.10x the screen
+     half-height at ~0.95 alpha — a full-frame flood that washed the rings out.
+     Now it tops out near a quarter of the half-height and reads as a hot centre
+     rather than a light source. */
+  const cs=maxR*0.022 + bass*maxR*0.055;
+  const cg=ctx.createRadialGradient(0,0,0,0,0,cs*2.6);
+  cg.addColorStop(0,wa('#fff',0.40+bass*0.35));
+  cg.addColorStop(0.3,wa(color,0.30+bass*0.28));
+  cg.addColorStop(1,'transparent');
+  ctx.fillStyle=cg; ctx.beginPath(); ctx.arc(0,0,cs*2.6,0,Math.PI*2); ctx.fill();
+
+  ctx.restore();
+}
 function drawNebula(ctx,dim,data,sense,color,glow,wa){
   const t=Date.now()*.0006,cx=dim.width/2,cy=dim.height/2;
   ctx.save();ctx.translate(cx,cy);
-  const bass=((data[0]||0)+(data[1]||0)+(data[2]||0))/3*sense,mid=(data[Math.floor(data.length/4)]||0)*sense,hi=(data[Math.floor(data.length*.75)]||0)*sense;
+  const bass=((data[0]||0)+(data[1]||0)+(data[2]||0))/3*sense,mid=(data[Math.floor(data.length/4)]||0)*sense,hi=fftAvg(data,200,400)*sense;
   ctx.save();ctx.globalCompositeOperation='lighter';
   for(let i=0;i<120;i++){const s=i*154.23;const ox=(Math.sin(s+t*.03)*.5+.5)*dim.width-cx,oy=(Math.cos(s*.8+t*.02)*.5+.5)*dim.height-cy;const tw=Math.sin(t*3+i)*.5+.5;const sz=.5+tw*1.5+(hi/255)*2;ctx.fillStyle=wa('#fff',.2+tw*.5+(hi/255)*.3);ctx.beginPath();ctx.arc(ox,oy,sz,0,Math.PI*2);ctx.fill();}
   ctx.restore();
@@ -931,7 +1359,17 @@ function drawTunnel(ctx,dim,data,sense,color,glow,wa){const t=Date.now()*.001,cx
 function drawSynapse(ctx,dim,data,sense,color,glow,wa){if(!data||!data.length)return;const t=Date.now()*.0006,cx=dim.width/2,cy=dim.height/2,gS=i=>(data[i%data.length]||0)*sense,bass=(gS(0)+gS(1)+gS(2))/3,mid=gS(Math.floor(data.length/4));ctx.save();ctx.translate(cx,cy);const rx=t*.3+(bass/255)*.4,ry=t*.5+(mid/255)*.4,rz=t*.2,nc=42,pts=[],br=Math.min(dim.width,dim.height)*.2,cX=Math.cos(rx),sX=Math.sin(rx),cY=Math.cos(ry),sY=Math.sin(ry),cZ=Math.cos(rz),sZ=Math.sin(rz);for(let i=0;i<nc;i++){const phi=Math.acos(-1+(2*(i+.5))/nc),theta=Math.sqrt(nc*Math.PI)*phi,val=gS(i*6),r=br+(val/255)*100;let x=r*Math.sin(phi)*Math.cos(theta),y=r*Math.sin(phi)*Math.sin(theta),z=r*Math.cos(phi),ty=y*cX-z*sX,tz=y*sX+z*cX;y=ty;z=tz;let tx=x*cY+z*sY,tz2=-x*sY+z*cY;x=tx;z=tz2;let tx2=x*cZ-y*sZ,ty2=x*sZ+y*cZ;pts.push({x:tx2,y:ty2,z,v:val});}const persp=800,proj=pts.map(p=>{const sc=persp/Math.max(10,persp+p.z);return{x:p.x*sc,y:p.y*sc,z:p.z,v:p.v,scale:sc};});ctx.globalCompositeOperation='screen';ctx.lineWidth=.8;const thr=180+(mid/255)*80;for(let i=0;i<proj.length;i++){for(let j=i+1;j<proj.length;j++){const dx=proj[i].x-proj[j].x,dy=proj[i].y-proj[j].y,d2=dx*dx+dy*dy;if(d2<thr*thr){const dist=Math.sqrt(d2),op=(1-dist/thr)*.4*(proj[i].scale+proj[j].scale)/2;ctx.beginPath();ctx.strokeStyle=wa(color,Math.max(0,op));ctx.moveTo(proj[i].x,proj[i].y);ctx.lineTo(proj[j].x,proj[j].y);ctx.stroke();}}}proj.sort((a,b)=>(b.z||0)-(a.z||0));for(const p of proj){const os=Math.max(1,(4+(p.v/255)*15)*p.scale),da=Math.max(.1,Math.min(1,(p.z+persp)/(persp*1.5))),gr=Math.max(1,os*2.5),g=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,gr);g.addColorStop(0,wa(color,Math.min(1,da+.3)));g.addColorStop(.4,wa(color,.7*da));g.addColorStop(1,'transparent');ctx.fillStyle=g;ctx.beginPath();ctx.arc(p.x,p.y,gr,0,Math.PI*2);ctx.fill();}ctx.restore();}
 function drawSingularity(ctx,dim,data,sense,color,glow,wa){const t=Date.now()*.001,cx=dim.width/2,cy=dim.height/2,bass=(data[0]+data[1]+data[2])/3*sense,eh=60+(bass/255)*40;ctx.save();ctx.translate(cx,cy);ctx.globalCompositeOperation='screen';for(let i=0;i<64;i++){const a=(i/64)*Math.PI*2+t*.5,v=data[i%32]*sense,r=eh+(v/255)*200+Math.sin(t+i)*20,x=Math.cos(a)*r,y=Math.sin(a)*r,g=ctx.createLinearGradient(x,y,0,0);g.addColorStop(0,wa(color,.6));g.addColorStop(1,'transparent');ctx.beginPath();ctx.strokeStyle=g;ctx.lineWidth=1;ctx.moveTo(x,y);ctx.quadraticCurveTo(x*.5,y*.5+Math.sin(t)*50,0,0);ctx.stroke();}ctx.globalCompositeOperation='source-over';ctx.fillStyle='#000';ctx.beginPath();ctx.arc(0,0,eh,0,Math.PI*2);ctx.fill();if(glow){ctx.shadowBlur=30;ctx.shadowColor=color;}ctx.strokeStyle=color;ctx.lineWidth=1+(bass/255)*4;ctx.beginPath();ctx.arc(0,0,eh,0,Math.PI*2);ctx.stroke();ctx.restore();}
 function drawAurora(ctx,dim,data,sense,color,glow,wa){const t=Date.now()*.0008,bands=5,hi=(data[Math.floor(data.length/2)]||0)*sense;ctx.save();ctx.globalCompositeOperation='lighter';for(let b=0;b<bands;b++){ctx.beginPath();ctx.strokeStyle=wa(color,(1-b/bands)*.4);ctx.lineWidth=40+(hi/255)*60;if(glow&&b===0){ctx.shadowBlur=40;ctx.shadowColor=color;}const seg=12;for(let i=0;i<=seg;i++){const x=(i/seg)*dim.width,fi=Math.floor((i/seg)*64),v=data[fi]*sense,by=dim.height*.7-(b*40),wave=Math.sin(i*.5+t+b)*80,react=(v/255)*120,y=by+wave-react;if(i===0)ctx.moveTo(x,y);else{const px=((i-1)/seg)*dim.width,py=dim.height*.7-(b*40)+Math.sin((i-1)*.5+t+b)*80-((data[Math.floor(((i-1)/seg)*64)]||0)*sense/255)*120;ctx.bezierCurveTo(px+(x-px)/2,py,px+(x-px)/2,y,x,y);}}ctx.stroke();}ctx.restore();}
-function drawMosaic(ctx,dim,data,sense,color,glow,wa){const t=Date.now()*.0005,bass=((data[0]||0)+(data[1]||0)+(data[2]||0))/3*sense,mid=(data[Math.floor(data.length/4)]||0)*sense,cs=120,cols=Math.ceil(dim.width/cs)+1,rows=Math.ceil(dim.height/cs)+1;ctx.save();const dst=(x,y,v)=>{ctx.save();ctx.translate(x,y);const pts=8,or=cs*.5,ir=cs*.25*(1+v/255);ctx.beginPath();ctx.strokeStyle=wa(color,.6+(v/255)*.4);ctx.lineWidth=1+(v/255)*2;for(let i=0;i<pts*2;i++){const r=i%2===0?or:ir,a=(i/(pts*2))*Math.PI*2+t;ctx.lineTo(Math.cos(a)*r,Math.sin(a)*r);}ctx.closePath();ctx.stroke();if(v>150){ctx.fillStyle=wa(color,(v/255)*.3);ctx.beginPath();ctx.arc(0,0,ir*.5,0,Math.PI*2);ctx.fill();}ctx.restore();};ctx.globalCompositeOperation='screen';for(let x=0;x<cols;x++){for(let y=0;y<rows;y++){const px=x*cs+(y%2===0?0:cs/2),py=y*cs,dx=px-dim.width/2,dy=py-dim.height/2,dist=Math.sqrt(dx*dx+dy*dy),lv=(data[Math.floor(dist/10)%data.length]||0)*sense;dst(px,py,lv);}}ctx.save();ctx.translate(dim.width/2,dim.height/2);ctx.rotate(-t*.5);ctx.strokeStyle='#fff';ctx.lineWidth=2+(mid/255)*4;if(glow){ctx.shadowBlur=30;ctx.shadowColor=color;}ctx.beginPath();for(let i=0;i<16;i++){const r=i%2===0?180+(bass/255)*100:72+(bass/255)*40,a=(i/16)*Math.PI*2;ctx.lineTo(Math.cos(a)*r,Math.sin(a)*r);}ctx.closePath();ctx.stroke();ctx.restore();ctx.restore();}
+/* ENDLESS — was MOSAIC: a tiled star lattice with a 16-point star at its centre.
+   Background lattice removed; this is now the SAMA ring form alone on black,
+   sized larger since it no longer competes with the tiles. Internal key stays
+   'mosaic' so setVizMode('mosaic') and #vp-mosaic keep resolving. */
+function drawMosaic(ctx,dim,data,sense,color,glow,wa){
+  ctx.save();
+  samaRingForm(ctx, dim.width/2, dim.height/2,
+               Math.min(dim.width, dim.height)*0.46,
+               'vizMosaic', color, data, !!(analyser && isPlaying), '#fff');
+  ctx.restore();
+}
 function drawOcean(ctx,dim,data,sense,color,glow,wa){
   const t=Date.now()*.001,bass=data[0]*sense;
   ctx.save();
@@ -986,7 +1424,7 @@ function drawSpaceCat(ctx,dim,data,sense,color,glow,wa){
   // State
   if(!ctx._sc)ctx._sc={kick:0,ex:0};
   const st=ctx._sc;
-  if(bass>175&&st.kick<135)st.ex=1.0;
+  if(bass>215&&st.kick<135)st.ex=1.0;
   st.kick=bass; st.ex=Math.max(0,st.ex-.026);
   const ex=st.ex;
 
@@ -1254,8 +1692,317 @@ function drawSpaceCat(ctx,dim,data,sense,color,glow,wa){
 }
 
 function drawChronos(ctx,dim,data,sense,color,glow,wa){const t=Date.now()*.0008,cx=dim.width/2,cy=dim.height/2,bass=((data[0]||0)+(data[1]||0)+(data[2]||0))/3*sense,mid=(data[Math.floor(data.length/4)]||0)*sense;ctx.save();ctx.translate(cx,cy);const persp=800,layers=15;for(let i=0;i<layers;i++){const z=(i*100-(t*150)%100)-(layers/2*100),sc=persp/Math.max(1,persp+z);if(sc<=.1||sc>4)continue;const op=Math.min(1,sc*.4)*(1-Math.abs(z)/(layers*50)),r=120+i*30,ld=(data[i*10%data.length]||0)*sense;ctx.save();ctx.scale(sc,sc);ctx.rotate(t*(i%2===0?.4:-.4));ctx.beginPath();ctx.strokeStyle=wa(color,op*.6);ctx.lineWidth=1+(ld/255)*4;const teeth=12+(i%3)*6;for(let tt=0;tt<teeth*2;tt++){const tr=tt%2===0?r:r-20,a=(tt/(teeth*2))*Math.PI*2;ctx.lineTo(Math.cos(a)*tr,Math.sin(a)*tr);}ctx.closePath();ctx.stroke();if(i%3===0){ctx.beginPath();ctx.strokeStyle=wa(color,op*.2);ctx.lineWidth=.5;for(let s=0;s<8;s++){const a=(s/8)*Math.PI*2;ctx.moveTo(0,0);ctx.lineTo(Math.cos(a)*(r-20),Math.sin(a)*(r-20));}ctx.stroke();}ctx.restore();}for(let h=0;h<4;h++){ctx.save();ctx.rotate(t*(.8/(h+1))+(mid/255)*1.5);const hl=Math.min(dim.width,dim.height)*(.15+h*.1);ctx.beginPath();ctx.strokeStyle='#fff';ctx.lineWidth=Math.max(.5,4-h);if(glow&&h===0){ctx.shadowBlur=30;ctx.shadowColor=color;}let cx2=0,cy2=0;ctx.moveTo(0,0);for(let j=1;j<=3;j++){const ja=Math.sin(t*3+h+j)*(bass/255)*.4,nx=cx2+Math.cos(ja)*(hl/3),ny=cy2+Math.sin(ja)*(hl/3);ctx.lineTo(nx,ny);ctx.save();ctx.fillStyle=wa(color,0.9);ctx.beginPath();ctx.arc(nx,ny,2.5,0,Math.PI*2);ctx.fill();ctx.restore();cx2=nx;cy2=ny;}ctx.stroke();ctx.restore();}const cr=40+(bass/255)*60,cg=ctx.createRadialGradient(0,0,0,0,0,cr);cg.addColorStop(0,wa(color,1));cg.addColorStop(.3,wa(color,.7));cg.addColorStop(1,'transparent');ctx.fillStyle=cg;ctx.beginPath();ctx.arc(0,0,cr,0,Math.PI*2);ctx.fill();ctx.restore();}
-function drawHyperSpace(ctx,dim,data,sense,color,glow,wa){const t=Date.now()*.001,cx=dim.width/2,cy=dim.height/2,bass=((data[0]||0)+(data[1]||0)+(data[2]||0))/3*sense,mid=(data[Math.floor(data.length/4)]||0)*sense,hi=(data[Math.floor(data.length*.75)]||0)*sense;ctx.save();ctx.translate(cx,cy);const persp=800;for(let i=0;i<150;i++){const seed=i*137.5,z=((seed*10+t*600)%2000)-1000,sc=persp/Math.max(1,persp+z);if(sc<=0||sc>10)continue;const angle=seed,dist=50+(i%10)*100,x=Math.cos(angle)*dist*sc,y=Math.sin(angle)*dist*sc,sl=10*sc*1.5,x2=Math.cos(angle)*(dist*sc+sl),y2=Math.sin(angle)*(dist*sc+sl),op=Math.min(1,sc*.5)*(1-Math.abs(z)/1000);ctx.beginPath();ctx.strokeStyle=wa(color,op*0.8);ctx.lineWidth=.5+sc*.5;ctx.moveTo(x,y);ctx.lineTo(x2,y2);ctx.stroke();}ctx.globalCompositeOperation='screen';for(let i=0;i<12;i++){const z=((i/12)*2000-(t*400)%2000)-1000,sc=persp/Math.max(1,persp+z);if(sc<=.1||sc>8)continue;const op=(1-Math.abs(z)/1000)*.4,rr=200+Math.sin(t+i)*50,ld=(data[i*12%data.length]||0)*sense;ctx.save();ctx.scale(sc,sc);ctx.rotate(t*.2+i*.5);ctx.beginPath();ctx.strokeStyle=wa(color,op);ctx.lineWidth=1+(ld/255)*5;for(let s=0;s<=6;s++){const a=(s/6)*Math.PI*2;ctx.lineTo(Math.cos(a)*(rr+(ld/255)*40),Math.sin(a)*(rr+(ld/255)*40));}ctx.stroke();ctx.restore();}if(hi>180){for(let s=0;s<8;s++){const a=(s/8)*Math.PI*2+t,len=Math.max(dim.width,dim.height)*1.5,g=ctx.createLinearGradient(0,0,Math.cos(a)*len,Math.sin(a)*len);g.addColorStop(0,wa(color,.4));g.addColorStop(1,'transparent');ctx.beginPath();ctx.strokeStyle=g;ctx.lineWidth=(hi/255)*30;ctx.moveTo(0,0);ctx.lineTo(Math.cos(a)*len,Math.sin(a)*len);ctx.stroke();}}const hb=40+(bass/255)*80,hg=ctx.createRadialGradient(0,0,0,0,0,hb*4);hg.addColorStop(0,'#000');hg.addColorStop(.2,wa(color,.6));hg.addColorStop(1,'transparent');ctx.fillStyle=hg;ctx.beginPath();ctx.arc(0,0,hb*4,0,Math.PI*2);ctx.fill();ctx.fillStyle='#000';ctx.beginPath();ctx.arc(0,0,hb,0,Math.PI*2);ctx.fill();ctx.strokeStyle=wa(color,0.9);ctx.lineWidth=2+(mid/255)*5;ctx.beginPath();ctx.arc(0,0,hb,0,Math.PI*2);ctx.stroke();ctx.restore();}
-function drawQuantum(ctx,dim,data,sense,color,glow,wa){const t=Date.now()*.0008,cx=dim.width/2,cy=dim.height/2,mid=(data[Math.floor(data.length/4)]||0)*sense,hi=(data[Math.floor(data.length*.8)]||0)*sense;ctx.save();const cs=40,cols=Math.ceil(dim.width/cs),rows=Math.ceil(dim.height/cs);for(let x=0;x<cols;x++){for(let y=0;y<rows;y++){const px=x*cs,py=y*cs,d1=Math.sqrt((px-cx)**2+(py-cy)**2),d2=Math.sqrt((px-cx-Math.sin(t)*200)**2+(py-cy)**2),intensity=(Math.sin(d1*.05-t*5)+Math.sin(d2*.05+t*3)+2)/4;if(intensity>.7){ctx.fillStyle=wa(color,(intensity-.7)*.2);ctx.fillRect(px,py,cs,cs);}}}ctx.translate(cx,cy);const pc=64,rb=Math.min(dim.width,dim.height)*.3;ctx.globalCompositeOperation='screen';for(let i=0;i<pc;i++){const a=(i/pc)*Math.PI*2+t,sp=(mid/255)*150,r=rb+Math.sin(t*2+i)*sp,x=Math.cos(a)*r,y=Math.sin(a)*r,ps=4+(hi/255)*12,pg=ctx.createRadialGradient(x,y,0,x,y,ps*2);pg.addColorStop(0,wa(color,1));pg.addColorStop(.4,wa(color,.4));pg.addColorStop(1,'transparent');ctx.fillStyle=pg;ctx.beginPath();ctx.arc(x,y,ps*2,0,Math.PI*2);ctx.fill();if(i%8===0){const ti=(i+Math.floor(pc/2))%pc,ta=(ti/pc)*Math.PI*2+t,tr=rb+Math.sin(t*2+ti)*sp;ctx.beginPath();ctx.strokeStyle=wa(color,.15*(mid/255));ctx.lineWidth=.5;ctx.moveTo(x,y);ctx.lineTo(Math.cos(ta)*tr,Math.sin(ta)*tr);ctx.stroke();}}ctx.restore();}
+function drawHyperSpace(ctx,dim,data,sense,color,glow,wa){const t=Date.now()*.001,cx=dim.width/2,cy=dim.height/2,bass=((data[0]||0)+(data[1]||0)+(data[2]||0))/3*sense,mid=(data[Math.floor(data.length/4)]||0)*sense,hi=fftAvg(data,200,400)*sense;ctx.save();ctx.translate(cx,cy);const persp=800;for(let i=0;i<150;i++){const seed=i*137.5,z=((seed*10+t*600)%2000)-1000,sc=persp/Math.max(1,persp+z);if(sc<=0||sc>10)continue;const angle=seed,dist=50+(i%10)*100,x=Math.cos(angle)*dist*sc,y=Math.sin(angle)*dist*sc,sl=10*sc*1.5,x2=Math.cos(angle)*(dist*sc+sl),y2=Math.sin(angle)*(dist*sc+sl),op=Math.min(1,sc*.5)*(1-Math.abs(z)/1000);ctx.beginPath();ctx.strokeStyle=wa(color,op*0.8);ctx.lineWidth=.5+sc*.5;ctx.moveTo(x,y);ctx.lineTo(x2,y2);ctx.stroke();}ctx.globalCompositeOperation='screen';for(let i=0;i<12;i++){const z=((i/12)*2000-(t*400)%2000)-1000,sc=persp/Math.max(1,persp+z);if(sc<=.1||sc>8)continue;const op=(1-Math.abs(z)/1000)*.4,rr=200+Math.sin(t+i)*50,ld=(data[i*12%data.length]||0)*sense;ctx.save();ctx.scale(sc,sc);ctx.rotate(t*.2+i*.5);ctx.beginPath();ctx.strokeStyle=wa(color,op);ctx.lineWidth=1+(ld/255)*5;for(let s=0;s<=6;s++){const a=(s/6)*Math.PI*2;ctx.lineTo(Math.cos(a)*(rr+(ld/255)*40),Math.sin(a)*(rr+(ld/255)*40));}ctx.stroke();ctx.restore();}if(hi>140){for(let s=0;s<8;s++){const a=(s/8)*Math.PI*2+t,len=Math.max(dim.width,dim.height)*1.5,g=ctx.createLinearGradient(0,0,Math.cos(a)*len,Math.sin(a)*len);g.addColorStop(0,wa(color,.4));g.addColorStop(1,'transparent');ctx.beginPath();ctx.strokeStyle=g;ctx.lineWidth=(hi/255)*30;ctx.moveTo(0,0);ctx.lineTo(Math.cos(a)*len,Math.sin(a)*len);ctx.stroke();}}const hb=40+(bass/255)*80,hg=ctx.createRadialGradient(0,0,0,0,0,hb*4);hg.addColorStop(0,'#000');hg.addColorStop(.2,wa(color,.6));hg.addColorStop(1,'transparent');ctx.fillStyle=hg;ctx.beginPath();ctx.arc(0,0,hb*4,0,Math.PI*2);ctx.fill();ctx.fillStyle='#000';ctx.beginPath();ctx.arc(0,0,hb,0,Math.PI*2);ctx.fill();ctx.strokeStyle=wa(color,0.9);ctx.lineWidth=2+(mid/255)*5;ctx.beginPath();ctx.arc(0,0,hb,0,Math.PI*2);ctx.stroke();ctx.restore();}
+function drawQuantum(ctx,dim,data,sense,color,glow,wa){const t=Date.now()*.0008,cx=dim.width/2,cy=dim.height/2,mid=(data[Math.floor(data.length/4)]||0)*sense,hi=fftAvg(data,200,400)*sense;ctx.save();const cs=40,cols=Math.ceil(dim.width/cs),rows=Math.ceil(dim.height/cs);for(let x=0;x<cols;x++){for(let y=0;y<rows;y++){const px=x*cs,py=y*cs,d1=Math.sqrt((px-cx)**2+(py-cy)**2),d2=Math.sqrt((px-cx-Math.sin(t)*200)**2+(py-cy)**2),intensity=(Math.sin(d1*.05-t*5)+Math.sin(d2*.05+t*3)+2)/4;if(intensity>.7){ctx.fillStyle=wa(color,(intensity-.7)*.2);ctx.fillRect(px,py,cs,cs);}}}ctx.translate(cx,cy);const pc=64,rb=Math.min(dim.width,dim.height)*.3;ctx.globalCompositeOperation='screen';for(let i=0;i<pc;i++){const a=(i/pc)*Math.PI*2+t,sp=(mid/255)*150,r=rb+Math.sin(t*2+i)*sp,x=Math.cos(a)*r,y=Math.sin(a)*r,ps=4+(hi/255)*12,pg=ctx.createRadialGradient(x,y,0,x,y,ps*2);pg.addColorStop(0,wa(color,1));pg.addColorStop(.4,wa(color,.4));pg.addColorStop(1,'transparent');ctx.fillStyle=pg;ctx.beginPath();ctx.arc(x,y,ps*2,0,Math.PI*2);ctx.fill();if(i%8===0){const ti=(i+Math.floor(pc/2))%pc,ta=(ti/pc)*Math.PI*2+t,tr=rb+Math.sin(t*2+ti)*sp;ctx.beginPath();ctx.strokeStyle=wa(color,.15*(mid/255));ctx.lineWidth=.5;ctx.moveTo(x,y);ctx.lineTo(Math.cos(ta)*tr,Math.sin(ta)*tr);ctx.stroke();}}ctx.restore();}
+</script>
+<script>
+/* ── SAMA RING ────────────────────────────────────────────────────────────
+   The layered-wobble form from the design preview, wired to the analyser so
+   it breathes with the audio instead of just looping on a timer. Wraps the
+   engine's drawRingCanvas rather than editing it, so any ring not listed in
+   _NEW_RING keeps its original look (LOCAL still does).
+   Band split runs low→high outward: the inner ring tracks bass, the outer
+   ring tracks treble. All radii scale off the canvas width (k) so the same
+   geometry fits the 440px home canvas and the 360px radio canvas alike —
+   max reach lands at ~97% of the half-width at full amplitude.            */
+/* Mirror #sama's data-theme onto <html>. setMode('viz') moves #vizPanel out to
+   <body>, where anything scoped to #sama no longer applies — this keeps the
+   fullscreen visualizer on the right palette. Purely additive; the engine's
+   setTheme is untouched. */
+(() => {
+  const el = document.getElementById('sama'); if(!el) return;
+  const sync = () => { document.documentElement.dataset.theme = el.dataset.theme || 'palestine'; };
+  new MutationObserver(sync).observe(el, {attributes:true, attributeFilter:['data-theme']});
+  sync();
+})();
+
+/* ── CUSTOM STREAMS ───────────────────────────────────────────────────────
+   Paste a direct stream URL, play it, keep it for next time. Entirely additive:
+   it shapes the entry into the same object the radio-browser API returns and
+   hands it to the engine's own playStation(), so playback, now-playing, the
+   preset slots and the wifi indicator all keep working untouched.
+   Rows are built with createElement/textContent rather than innerHTML — these
+   names are user input and must never be parsed as markup.                  */
+const CUSTOM_KEY = 'sama_custom_streams';
+
+function loadCustomStreams(){
+  try { const a = JSON.parse(localStorage.getItem(CUSTOM_KEY) || '[]'); return Array.isArray(a) ? a : []; }
+  catch(e){ return []; }
+}
+function saveCustomList(a){ localStorage.setItem(CUSTOM_KEY, JSON.stringify(a)); }
+
+// station-shaped so the engine can't tell the difference
+function customToStation(s){
+  return { name: s.name || s.url, url: s.url, url_resolved: s.url,
+           bitrate: 0, stationuuid: 'custom:' + s.url };
+}
+// only real http(s) — blocks javascript:, data:, file: and typos
+function validStreamUrl(u){
+  try { const p = new URL(u); return p.protocol === 'http:' || p.protocol === 'https:'; }
+  catch(e){ return false; }
+}
+/* archive.org /details/ links are the HTML PAGE, not the media — they return
+   text/html, the <audio> element can't decode them, and the engine's play()
+   catch is silent so it just does nothing. /download/ serves the real file
+   (audio/mpeg, and CORS-clean, which the analyser requires). The address bar
+   always gives you /details/, so rewrite it rather than making you fix it. */
+function normaliseStreamUrl(u){
+  try{
+    const p = new URL(u);
+    if(/(^|\.)archive\.org$/i.test(p.hostname) && p.pathname.startsWith('/details/')){
+      p.pathname = p.pathname.replace('/details/', '/download/');
+      return p.toString();
+    }
+  }catch(e){}
+  return u;
+}
+function readCustomFields(){
+  const raw  = document.getElementById('customUrl').value.trim();
+  const name = document.getElementById('customName').value.trim();
+  if(!validStreamUrl(raw)){ alert('Enter a full http:// or https:// stream URL.'); return null; }
+  return { url: normaliseStreamUrl(raw), name };
+}
+// The engine's playStation() swallows failures. Surface them for custom URLs,
+// otherwise a bad link is indistinguishable from a silent one.
+function playCustomStream(){
+  const f = readCustomFields(); if(!f) return;
+  const onErr = () => alert(
+    'That stream could not be played.\n\n' +
+    'It needs to be a direct link to an audio file, not a web page.\n' +
+    'The server must also allow cross-origin requests.');
+  audioEl.addEventListener('error', onErr, { once:true });
+  setTimeout(() => audioEl.removeEventListener('error', onErr), 15000);
+  playStation(customToStation(f));
+}
+function saveCustomStream(){
+  const f = readCustomFields(); if(!f) return;
+  const list = loadCustomStreams();
+  if(list.some(s => s.url === f.url)){ alert('That stream is already saved.'); return; }
+  list.push({ name: f.name || f.url, url: f.url });
+  saveCustomList(list); renderCustomStreams();
+  document.getElementById('customUrl').value = '';
+  document.getElementById('customName').value = '';
+}
+function renderCustomStreams(){
+  const el = document.getElementById('customList'); if(!el) return;
+  const list = loadCustomStreams();
+  const cnt = document.getElementById('customCount'); if(cnt) cnt.textContent = list.length;
+  el.textContent = '';
+  if(!list.length){
+    const d = document.createElement('div'); d.className = 'cs-msg';
+    d.textContent = 'No saved streams'; el.appendChild(d); return;
+  }
+  list.forEach((s, i) => {
+    const row = document.createElement('div'); row.className = 'station-row';
+    const t = document.createElement('span');
+    t.style.cssText = 'flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer';
+    t.textContent = s.name; t.title = s.url;
+    t.onclick = () => playStation(customToStation(s));
+    const star = document.createElement('button');
+    star.className = 'st-fav'; star.textContent = '★'; star.title = 'Store in a preset slot';
+    star.onclick = e => { e.stopPropagation(); savePreset(customToStation(s)); };
+    const rm = document.createElement('button');
+    rm.className = 'st-fav'; rm.textContent = '✕'; rm.title = 'Remove';
+    rm.onclick = e => { e.stopPropagation();
+      const l = loadCustomStreams(); l.splice(i, 1); saveCustomList(l); renderCustomStreams(); };
+    row.append(t, star, rm); el.appendChild(row);
+  });
+}
+renderCustomStreams();
+
+const _samaOrigRing = drawRingCanvas;
+const _NEW_RING = new Set(['homeRing', 'radioRing', 'localRing']);
+// Each ring owns a slice of the spectrum, low → high as you move outward.
+const _RING_LO = [0, 8, 28, 70, 150], _RING_HI = [8, 28, 70, 150, 320];
+
+/* Audio drives the DEPTH OF EACH RING'S OWN PETAL, never the vertices.
+   Displacing each vertex by its own FFT bin injects broadband noise and the
+   curve turns to gravel; adding rival lobe-counts averages the petals away
+   into plain concentric circles. Swelling the ring's existing lobe keeps the
+   silhouette intact and makes it stronger, not weaker, as the music builds.
+   Envelopes rise fast and fall slow (attack/release) so it flows instead of
+   flickering at frame rate.                                                */
+/* Envelope follower — fast up, slower down. Deliberately looser than it looks:
+   the engine's analyser is already at smoothingTimeConstant 0.82, so heavy
+   damping here just compounds and the form goes lifeless. */
+const _ATK = 0.30, _REL = 0.085;
+const _env = {};                       // cvId → persistent per-ring state
+
+/* ── TUNING KNOBS ──────────────────────────────────────────────────────────
+   _SPEED       multiplies every time-based rate at once. 1 = current pace,
+                1.5 = half again as fast, 0.7 = noticeably calmer.
+   _ECHOES      how many copies of the line are in flight at once.
+   _FALL_PERIOD seconds for one copy to travel from the live edge to the centre.
+                Raise for a slower, longer fall.
+   _FALL_DEPTH  how far in it shrinks over that trip (0.62 → down to 38% size).
+
+   The echoes fall INWARD forever: each one is spawned at the live line, then
+   shrinks and dims as it recedes, wrapping back to the edge when it reaches
+   the middle. Because each copy is also drawn at the time it was spawned
+   (t - age), it is genuinely the past shape falling away, not a scaled clone.
+   Staggered phases mean one is always spawning as another vanishes, so the
+   cycle never visibly restarts.                                             */
+const _SPEED = 1.0, _ECHOES = 7, _FALL_PERIOD = 2.8, _FALL_DEPTH = 0.62;
+
+/* BOUNCE — the bass drives a damped spring rather than a smoothed envelope.
+   An envelope can only ease toward its target; a spring overshoots and rings,
+   which is what reads as bounce. It's also what makes the echoes visible: the
+   form has to move sharply for six lagged copies to separate at all.
+   _STIFF raises the springiness, _DAMP nearer 1 = looser, longer wobble.    */
+const _STIFF = 0.20, _DAMP = 0.84, _BOUNCE = 0.16;
+
+/* BLOOM — mid energy opens the form: 5% on overall radius plus extra petal
+   reach, so the flower breathes open rather than only pulsing on the kick.
+   Band is the LOW mids — roughly 215–990 Hz at 44.1k with fftSize 2048
+   (~21.5 Hz per bin). That is where vocal body, guitar and snare live, so it
+   moves far more musically than upper mids, which sit closer to a steady hiss.
+   Starts at bin 10 so it doesn't double-count the bass envelope (bins 0–10).
+   _MID_REL is looser than the global release so the bloom tracks phrasing. */
+const _MID_BLOOM = 0.05, _MID_REACH = 0.30;
+const _MID_LO = 10, _MID_HI = 46, _MID_REL = 0.11;
+
+/* Draws the SAMA ring form at an arbitrary centre and radius, so the same
+   artwork can be used by the mode canvases AND by visualizer presets.
+   `key` names a slot in _env — each caller keeps its own envelope/spring state
+   so a paused home ring can't bleed into a running viz one. Callers own the
+   clear; this only strokes. */
+function samaRingForm(ctx, cx, cy, half, key, col, fft, playing, echoCol){
+  // Geometry is written in the preview's own 440px units; 0.90 reserves room
+  // for the audio swell and the soft limiter below catches the extremes.
+  // 0.78 leaves room for the auto-gained bounce + bloom to actually travel.
+  // The stage itself was scaled up in CSS, so the ring still reads larger on
+  // screen than before despite the smaller fill factor.
+  const k = (half/220)*0.75;
+  const t = Date.now()*0.001*_SPEED;
+  const c = cx;
+
+  const st = _env[key] || (_env[key] = {h:[...Array(5)].map(()=>[0,0]), bass:0, vel:0, slow:0, mid:0, pk:{}});
+
+  /* AUTO-GAIN with RANGE EXPANSION.
+     Measured against a real trance master (BBE — Symphonic Paradise): the band
+     averages sit at 0.60–0.84 and only span ~0.24, because the track is heavily
+     limited. Normalising against a running PEAK alone is actively harmful there
+     — with the floor that high, cur/peak pins everything to 0.95–1.0 and the
+     usable span collapses to 0.045, i.e. flatter than the raw signal.
+     Tracking a floor as well as a peak, and stretching the window between them
+     to 0..1, recovers a 0.90 span from the same material. That difference is
+     the whole reason the form looked dead in the app but fine on synthetic
+     full-scale test input. Both bounds creep toward each other so the window
+     re-adapts after a breakdown or a genre change. */
+  const agc = (cur, band) => {
+    const s = st.pk[band] || (st.pk[band] = {hi: cur, lo: cur});
+    const creep = (s.hi - s.lo) * 0.0016;
+    s.hi = Math.max(cur, s.hi - creep);
+    s.lo = Math.min(cur, s.lo + creep);
+    const span = s.hi - s.lo;
+    return span > 0.02 ? Math.min(1, Math.max(0, (cur - s.lo) / span)) : 0;
+  };
+
+  // bass → spring: accelerate toward the target, damp, integrate. Overshoots.
+  const bassT = playing ? agc(fftAvg(fft, 0, 10)/255, 'b') : 0;
+  st.vel = (st.vel + (bassT - st.bass) * _STIFF) * _DAMP;
+  st.bass += st.vel;
+  // Slow baseline, so the springy part can be taken as a SIGNED deviation.
+  // Bouncing around a stable centre means the form swells and shrinks rather
+  // than only inflating — the movement is free instead of costing headroom.
+  st.slow += (bassT - st.slow) * 0.03;
+  const bnc = st.bass - st.slow;
+
+  // low-mids → bloom (see _MID_BLOOM)
+  const midT = playing ? agc(fftAvg(fft, _MID_LO, _MID_HI)/255, 'm') : 0;
+  st.mid += (midT - st.mid) * (midT > st.mid ? _ATK : _MID_REL);
+
+  // two sub-bands per ring: [0] swells the petals, [1] adds the counter detail
+  let avg = 0;
+  for (let r = 0; r < 5; r++){
+    const lo = _RING_LO[r], hi = _RING_HI[r], mid = (lo+hi)/2, e = st.h[r];
+    const t0 = playing ? agc(fftAvg(fft, lo, mid)/255, 'r'+r+'a') : 0;
+    const t1 = playing ? agc(fftAvg(fft, mid, hi)/255, 'r'+r+'b') : 0;
+    e[0] += (t0 - e[0]) * (t0 > e[0] ? _ATK : _REL);
+    e[1] += (t1 - e[1]) * (t1 > e[1] ? _ATK : _REL);
+    avg += (e[0] + e[1]) / 2;
+  }
+  avg /= 5;
+
+  // soft limiter: tips compress asymptotically instead of flattening on the edge
+  const maxR = half*0.99, knee = maxR*0.92;
+  const limit = v => v <= knee ? v : knee + (maxR-knee)*Math.tanh((v-knee)/(maxR-knee));
+
+  // One complete pass of the form, evaluated at time `tt` and dimmed by `dim`.
+  // Because the shape is a pure function of time, replaying it at t-lag gives a
+  // true delayed echo — the trail is genuinely *behind* the form rather than a
+  // blur smeared over the whole canvas.
+  const form = (tt, dim, glow, stroke, scale) => {
+    for (let r = 0; r < 5; r++){
+      const e = st.h[r], energy = (e[0] + e[1]) / 2;
+      const lobe  = 3 + r;                                 // the ring's own petal count
+      // Each ring drifts slowly at its own rate, alternating direction so the
+      // layers slide against each other. Deliberately NO extra rotation term
+      // on top — that is what turned the echo trail into a spinning smear.
+      const drift = (r % 2 ? -1 : 1) * (0.30 + r*0.085);
+      // rings bounce in sequence — outer ones move less, so the pulse travels outward
+      const rad   = (58 + r*36) * k
+                  * (1 + st.slow*0.05 + st.mid*_MID_BLOOM + bnc*_BOUNCE*(1 - r*0.09)) * scale;
+      const reach = (7 + r*3.4) * k * (1 + st.mid*_MID_REACH) * scale;
+      const seg   = 100 + r*12;
+
+      ctx.beginPath();
+      for (let i = 0; i <= seg; i++){
+        const a = i/seg * Math.PI*2;
+        let rr = rad
+          // audio deepens the ring's OWN petals rather than adding rival lobes
+          + Math.sin(a*lobe + tt*drift) * reach * (1 + energy*1.5)
+          // one counter-drifting overtone for asymmetry — only present with audio
+          + Math.sin(a*lobe*2 - tt*drift*0.6) * reach * 0.30 * energy
+          + Math.sin(tt*0.55 + r) * 3 * k;                 // slow breathing
+        rr = limit(rr);
+        const x = cx + Math.cos(a)*rr, y = cy + Math.sin(a)*rr;
+        i ? ctx.lineTo(x,y) : ctx.moveTo(x,y);
+      }
+      ctx.closePath();
+      ctx.strokeStyle = stroke;
+      ctx.globalAlpha = Math.min(1, (0.66 - r*0.10) * (1 + energy*0.40)) * dim;
+      ctx.lineWidth   = ((r === 0 ? 2.4 : 1.3) + energy*1.5) * k;
+      // glow only on the live pass — echoes stay flat, which keeps them from
+      // muddying into a haze and keeps 6 passes cheap to draw
+      ctx.shadowBlur  = glow ? ((r === 0 ? 26 : 12) + energy*18) * k : 0;
+      ctx.shadowColor = stroke;
+      ctx.stroke();
+    }
+  };
+
+  /* Echoes stroke WHITE by default so they read as their own layer against the
+     accent-coloured live line — works equally in all four styles.
+     `d` is how far a copy has fallen: 0 = just left the live line, 1 = gone.
+     Alpha fades IN over the first stretch so nothing pops into existence at
+     the edge, then decays as it recedes. Drawn deepest-first so nearer copies
+     overlay the ones further down. */
+  const falling = [];
+  for (let e = 0; e < _ECHOES; e++){
+    const d = ((e/_ECHOES) + (t/_FALL_PERIOD)) % 1;
+    falling.push({
+      d,
+      scale: 1 - d*_FALL_DEPTH,
+      age:   d*_FALL_PERIOD,
+      alpha: Math.pow(1-d, 1.15) * Math.min(1, d*7)
+    });
+  }
+  falling.sort((a,b) => b.d - a.d);                        // deepest first
+  for (const f of falling)
+    form(t - f.age, f.alpha, false, echoCol || '#ffffff', f.scale);
+  form(t, 1, true, col, 1);                                // live form, on top
+  ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+}
+
+// Mode canvases (home / radio / local) — thin wrapper over the shared form.
+drawRingCanvas = function(cvId){
+  if (!_NEW_RING.has(cvId)) return _samaOrigRing(cvId);
+  const cv = document.getElementById(cvId); if(!cv) return;
+  const ctx = cv.getContext('2d'), W = cv.width, H = cv.height;
+  const { fft } = getFFT();
+  ctx.clearRect(0, 0, W, H);
+  samaRingForm(ctx, W/2, H/2, W/2, cvId, samaColor(), fft, !!(analyser && isPlaying));
+};
 </script>
 <script>
 if('serviceWorker' in navigator){
